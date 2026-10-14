@@ -108,6 +108,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
     setIsSubmitting(true);
     try {
+      if (!existingProfile) throw new Error('Please sign in with Google before saving your account details.');
       const updatedProfile: UserProfile = {
         id: existingProfile?.id || `usr-${Date.now()}`,
         email: existingProfile?.email || 'customer@gmail.com',

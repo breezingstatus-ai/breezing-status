@@ -34,7 +34,8 @@ export async function uploadToCloudinary(
   fileOrBlob: File | Blob,
   resourceType: 'image' | 'video' = 'image',
   fileName: string = 'media_asset',
-  onProgress?: (percent: number) => void
+  onProgress?: (percent: number) => void,
+  reservation?: { token: string; count: number }
 ): Promise<CloudinaryUploadResult> {
   if (!isCloudinaryConfigured()) {
     throw new Error(
@@ -98,8 +99,17 @@ export async function uploadToCloudinary(
   if (isSupabaseConfigured() && supabase) {
     try {
       const { data: signData, error: signError } = await supabase.functions.invoke('sign-cloudinary-upload', {
-        body: { mediaType: resourceType, count: 1 },
+        body: { mediaType: resourceType, count: reservation?.count || 1, reservationToken: reservation?.token },
       });
+
+      if (signError) {
+        const body = signError.context instanceof Response
+          ? await signError.context.json().catch(() => null) : null;
+        throw new Error(body?.error || signError.message);
+      }
+      if (!signData?.signature || !signData?.apiKey) {
+        throw new Error(signData?.error || 'The upload service did not return signing credentials.');
+      }
 
       if (!signError && signData?.signature && signData?.apiKey) {
         const url = `https://api.cloudinary.com/v1_1/${signData.cloudName || cloudName}/${resourceType}/upload`;
@@ -154,7 +164,7 @@ export async function uploadToCloudinary(
         });
       }
     } catch (e: any) {
-      console.warn('Signed upload attempt error:', e);
+      throw e;
     }
   }
 

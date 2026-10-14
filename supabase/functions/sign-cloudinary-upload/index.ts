@@ -8,6 +8,7 @@ import { crypto } from "https://deno.land/std@0.177.0/crypto/mod.ts";
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
 serve(async (req) => {
@@ -35,6 +36,10 @@ serve(async (req) => {
     const { data: { user }, error: userError } = await supabase.auth.getUser();
     if (userError || !user) {
       return new Response(JSON.stringify({ error: "Invalid user token" }), { status: 401, headers: corsHeaders });
+    }
+
+    if (!cloudinaryApiKey || !cloudinaryApiSecret || !cloudinaryCloudName) {
+      return new Response(JSON.stringify({ error: "Cloudinary credentials are not configured in Supabase Edge Function secrets" }), { status: 503, headers: corsHeaders });
     }
 
     const { mediaType, count, reservationToken } = await req.json();

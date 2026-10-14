@@ -253,7 +253,21 @@ export async function signOut(): Promise<void> {
 
 export async function saveUserProfile(profile: UserProfile): Promise<void> {
   if (isSupabaseConfigured() && supabase) {
-    await supabase.from('profiles').upsert(profile);
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user) throw new Error('Please sign in again before saving your profile.');
+    if (user.id !== profile.id) throw new Error('This profile does not belong to your signed-in account.');
+    const { data, error } = await supabase.from('profiles').update({
+      full_name: profile.full_name,
+      whatsapp_number: profile.whatsapp_number,
+      country_code: profile.country_code,
+      whatsapp_consent: profile.whatsapp_consent,
+      avatar_url: profile.avatar_url,
+      avatar_thumbnail_url: profile.avatar_thumbnail_url,
+      theme_preference: profile.theme_preference,
+    }).eq('id', user.id).select('*').single();
+    if (error) throw new Error(error.message);
+    setStored(STORAGE_KEYS.USER, data);
+    return;
   }
   setStored(STORAGE_KEYS.USER, profile);
 }
@@ -359,7 +373,10 @@ export async function updateAppSettings(settings: AppSettings): Promise<void> {
 // ==========================================
 
 export async function getUserQuota(userId: string): Promise<UsageQuota> {
-  const currentMonth = new Date().toISOString().slice(0, 7);
+  const dateParts = new Intl.DateTimeFormat('en', {
+    timeZone: 'Africa/Blantyre', year: 'numeric', month: '2-digit',
+  }).formatToParts(new Date());
+  const currentMonth = `${dateParts.find(p => p.type === 'year')!.value}-${dateParts.find(p => p.type === 'month')!.value}`;
 
   if (isSupabaseConfigured() && supabase) {
     const { data } = await supabase
@@ -367,7 +384,7 @@ export async function getUserQuota(userId: string): Promise<UsageQuota> {
       .select('*')
       .eq('user_id', userId)
       .eq('month_year', currentMonth)
-      .single();
+      .maybeSingle();
 
     if (data) return data;
   }
@@ -466,7 +483,13 @@ export async function createUploadRequest(
         const { data: edgeData, error: edgeError } = await supabase.functions.invoke('finalize-request', {
           body: {
             mediaType,
-            assets,
+            assets: assets.map(asset => ({
+              ...asset,
+              public_id: asset.cloudinary_public_id,
+              asset_id: asset.cloudinary_asset_id,
+              bytes: asset.file_size_bytes,
+              duration: asset.duration_seconds,
+            })),
             reservationToken,
             customerNotes: notes,
           },
@@ -481,6 +504,11 @@ export async function createUploadRequest(
           setStored(STORAGE_KEYS.REQUESTS, [req, ...requests.filter((r) => r.id !== req.id)]);
           return req;
         }
+        if (edgeError?.context instanceof Response) {
+          const body = await edgeError.context.json().catch(() => null);
+          throw new Error(body?.error || edgeError.message);
+        }
+        throw new Error(edgeData?.error || edgeError?.message || 'The upload could not be finalized.');
       }
 
       // 2. Direct fallback (for active administrators)
@@ -520,7 +548,7 @@ export async function createUploadRequest(
         await supabase.from('media_assets').insert(assetRows);
       }
     } catch (e) {
-      console.warn('Supabase request creation warning:', e);
+      throw e;
     }
   }
 

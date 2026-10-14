@@ -225,7 +225,8 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
               const base = 50 + (i / totalFiles) * 35;
               const slice = (1 / totalFiles) * 35 * (pct / 100);
               setProcessingPercent(Math.min(85, Math.round(base + slice)));
-            }
+            },
+            { token: reservationToken, count: totalFiles }
           );
 
           uploadedAssets.push({
@@ -256,7 +257,8 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
               const base = 50 + (i / totalFiles) * 35;
               const slice = (1 / totalFiles) * 35 * (pct / 100);
               setProcessingPercent(Math.min(85, Math.round(base + slice)));
-            }
+            },
+            { token: reservationToken, count: totalFiles }
           );
 
           uploadedAssets.push({

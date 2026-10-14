@@ -7,6 +7,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.0";
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
 serve(async (req) => {
@@ -20,7 +21,7 @@ serve(async (req) => {
     const resendApiKey = Deno.env.get("RESEND_API_KEY") ?? "";
     const adminEmail = Deno.env.get("ADMIN_NOTIFICATION_EMAIL") ?? "breezingstatus@gmail.com";
     const fromEmail = Deno.env.get("RESEND_FROM_EMAIL") ?? "notifications@breezing.com";
-    const appUrl = Deno.env.get("APP_URL") ?? "https://breezing-status-hd.pages.dev";
+    const appUrl = Deno.env.get("APP_URL") ?? "https://breezing-status-hd.breezingstatus.workers.dev";
     const cloudinaryApiKey = Deno.env.get("CLOUDINARY_API_KEY") ?? "";
     const cloudinaryApiSecret = Deno.env.get("CLOUDINARY_API_SECRET") ?? "";
     const cloudinaryCloudName = Deno.env.get("CLOUDINARY_CLOUD_NAME") ?? "";
@@ -198,14 +199,18 @@ serve(async (req) => {
       expires_at: newRequest.expires_at,
     }));
 
-    await supabaseAdmin.from("media_assets").insert(mediaAssetRows);
+    const { error: assetError } = await supabaseAdmin.from("media_assets").insert(mediaAssetRows);
+    if (assetError) throw new Error(assetError.message);
 
     // 5. Finalize media quota atomically using reservation token and linked request ID
     if (reservationToken) {
-      await supabaseAdmin.rpc("finalize_media_quota", {
+      const { data: finalized, error: finalizeError } = await supabaseAdmin.rpc("finalize_media_quota", {
         p_reservation_token: reservationToken,
         p_request_id: newRequest.id,
       });
+      if (finalizeError || !finalized?.success) {
+        throw new Error(finalizeError?.message || finalized?.error || "Could not finalize upload quota");
+      }
     }
 
     // 6. Send transactional Resend email alert to administrator

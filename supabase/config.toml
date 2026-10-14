@@ -1,0 +1,7 @@
+# These handlers validate the caller through Supabase Auth before doing work.
+# The legacy gateway check cannot validate the project's asymmetric user JWTs.
+[functions.sign-cloudinary-upload]
+verify_jwt = false
+
+[functions.finalize-request]
+verify_jwt = false

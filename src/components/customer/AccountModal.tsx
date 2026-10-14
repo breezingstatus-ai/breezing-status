@@ -80,9 +80,13 @@ export const AccountModal: React.FC<AccountModalProps> = ({
       whatsapp_number: normalized,
       country_code: countryCode,
     };
-    await saveUserProfile(updated);
-    onUserUpdated(updated);
-    setIsEditingPhone(false);
+    try {
+      await saveUserProfile(updated);
+      onUserUpdated(updated);
+      setIsEditingPhone(false);
+    } catch (error: any) {
+      setPhoneError(error.message || 'Could not save your WhatsApp number.');
+    }
   };
 
   const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
