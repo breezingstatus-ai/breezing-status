@@ -222,3 +222,10 @@ img, video { max-width: 100%; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
 }
+.app-confirmation { background: var(--surface, #fffefa); color: var(--text, #19241e); border: 1px solid var(--border, #e4eae5); border-radius: 22px; width: min(440px, calc(100vw - 32px)); padding: 28px; margin: auto; box-shadow: 0 24px 80px #0003; }
+.app-confirmation::backdrop { background: #10171399; backdrop-filter: blur(5px); }
+.app-confirmation h2 { font-size: 20px; font-weight: 700; }
+.app-confirmation p { margin: 14px 0 24px; font-size: 14px; line-height: 1.7; }
+.confirmation-actions { display: flex; justify-content: flex-end; gap: 12px; }
+.confirmation-actions button { border: 1px solid #cbd5cd; border-radius: 10px; min-height: 44px; padding: 10px 18px; }
+.confirmation-actions .confirmation-primary { background: #173b2a; color: #fff; border-color: #173b2a; }

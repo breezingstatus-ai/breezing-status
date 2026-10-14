@@ -50,7 +50,10 @@ assert.equal(receivedKey, 'test-current-publishable-key', 'Use current publishab
 const data = await signed.json();
 assert.equal(reserved.p_count, 3);
 assert.equal(reserved.p_reservation_token, 'existing-batch', 'Signing must reuse the original batch reservation');
-assert.equal(data.signature, createHash('sha1').update(`folder=${data.folder}&timestamp=${data.timestamp}${secret}`).digest('hex'));
+assert.equal(data.publicId, 'existing-batch/0');
+assert.equal(data.overwrite, false);
+assert.equal(data.signature, createHash('sha1').update(`allowed_formats=${data.allowedFormats}&folder=${data.folder}&overwrite=false&public_id=${data.publicId}&timestamp=${data.timestamp}${secret}`).digest('hex'));
+assert.equal((await handler(request({mediaType:'image',count:3,reservationToken:'existing-batch',assetIndex:3}))).status,400);
 reserveError = { message: 'Quota exceeded' };
 assert.equal((await handler(request({ mediaType: 'image', count: 3, reservationToken: 'existing-batch' }))).status, 400);
 console.log('Upload signing regression checks passed: CORS, authentication, configuration, batch reservation, signature, quota rejection.');

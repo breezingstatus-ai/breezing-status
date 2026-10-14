@@ -1,4 +1,8 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { PackageEditor } from './PackageEditor';
+import { WatermarkPreview } from './WatermarkPreview';
+import { useDialogs } from '../common/Dialogs';
+import { supabase } from '../../lib/supabase';
+import React, { useState, useEffect } from 'react';
 import {
   ArrowLeft,
   Sliders,
@@ -31,6 +35,7 @@ import {
   getPaymentRequests,
   approvePayment,
   rejectPayment,
+  checkIsAdmin,
 } from '../../lib/supabase';
 import { SUPPORTED_COUNTRIES } from '../../lib/phone';
 
@@ -39,7 +44,8 @@ interface AdminSettingsProps {
 }
 
 export const AdminSettings: React.FC<AdminSettingsProps> = ({ onBack }) => {
-  const [activeTab, setActiveTab] = useState<'official-contact' | 'watermark' | 'limits' | 'packages' | 'payments' | 'storage' | 'health'>('official-contact');
+  const { confirm, notify } = useDialogs();
+  const [activeTab, setActiveTab] = useState<'official-contact' | 'watermark' | 'limits' | 'packages' | 'payments' | 'storage' | 'email'>('official-contact');
 
   // Official WhatsApp Contact & App Settings
   const [appSettings, setAppSettings] = useState<AppSettings | null>(null);
@@ -68,7 +74,6 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ onBack }) => {
   const [payments, setPayments] = useState<PaymentRequest[]>([]);
 
   // Canvas ref for live interactive watermark preview
-  const previewCanvasRef = useRef<HTMLCanvasElement>(null);
 
   const loadData = async () => {
     const wm = await getWatermarkSettings();
@@ -91,7 +96,7 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ onBack }) => {
       setOfficialCountryCode(appSet.official_country_code || '+265');
     }
 
-    const payList = await getPaymentRequests();
+    const payList = await checkIsAdmin() ? await getPaymentRequests() : [];
     setPayments(payList);
   };
 
@@ -100,24 +105,15 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ onBack }) => {
     setTestEmailResult(null);
 
     try {
-      // Real test email call to Supabase Edge Function or Resend API proxy
-      const res = await fetch('/api/test-admin-email', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-      }).catch(() => null);
-
-      if (res && res.ok) {
-        setTestEmailResult({
-          success: true,
-          message: 'Real test email dispatched successfully to breezingstatus@gmail.com via Resend API.',
-        });
-      } else {
-        // Direct safe check report
-        setTestEmailResult({
-          success: true,
-          message: 'Resend notification endpoint is configured for recipient: breezingstatus@gmail.com.',
-        });
+      const {data: {session}} = await supabase!.auth.getSession();
+      if (!session) throw new Error('Sign in again to test email.');
+      const {data, error} = await supabase!.functions.invoke('test-admin-email', {headers: {Authorization: `Bearer ${session.access_token}`}});
+      if (error) {
+        const body = error.context instanceof Response ? await error.context.json().catch(()=>null) : null;
+        throw new Error(body?.error || error.message);
       }
+      if (!data?.success) throw new Error(data?.error || 'Resend did not accept the email.');
+      setTestEmailResult({success: true, message: 'Resend accepted the test email for delivery.'});
     } catch (err: any) {
       setTestEmailResult({
         success: false,
@@ -129,84 +125,8 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ onBack }) => {
   };
 
   useEffect(() => {
-    loadData();
+    void loadData().catch(error=>notify(error instanceof Error?error.message:'Could not load settings'));
   }, []);
-
-  // Live Canvas Watermark Preview Renderer
-  useEffect(() => {
-    if (!watermark || !previewCanvasRef.current) return;
-    const canvas = previewCanvasRef.current;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    const width = 640;
-    const height = 480;
-    canvas.width = width;
-    canvas.height = height;
-
-    // Background sample photo simulation
-    const grad = ctx.createLinearGradient(0, 0, width, height);
-    grad.addColorStop(0, '#173B2A');
-    grad.addColorStop(0.5, '#25332A');
-    grad.addColorStop(1, '#0E2419');
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, width, height);
-
-    ctx.fillStyle = 'rgba(255,255,255,0.06)';
-    ctx.beginPath();
-    ctx.arc(320, 240, 140, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.fillStyle = '#FFFFFF';
-    ctx.font = 'bold 24px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText('Sample WhatsApp Status Photo', 320, 220);
-    ctx.font = '14px sans-serif';
-    ctx.fillStyle = '#A7B8AC';
-    ctx.fillText('Original Dimensions & Sharpness Preserved', 320, 250);
-
-    // Render watermark onto preview canvas
-    if (!watermark.enabled_for_free) return;
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.onload = () => {
-      const wmAspect = img.width / (img.height || 1);
-      const targetWidth = Math.max(60, width * watermark.relative_size);
-      const targetHeight = targetWidth / wmAspect;
-
-      let x = watermark.padding_pixels;
-      let y = watermark.padding_pixels;
-
-      switch (watermark.position) {
-        case 'bottom-right':
-          x = width - targetWidth - watermark.padding_pixels;
-          y = height - targetHeight - watermark.padding_pixels;
-          break;
-        case 'bottom-left':
-          x = watermark.padding_pixels;
-          y = height - targetHeight - watermark.padding_pixels;
-          break;
-        case 'top-right':
-          x = width - targetWidth - watermark.padding_pixels;
-          y = watermark.padding_pixels;
-          break;
-        case 'top-left':
-          x = watermark.padding_pixels;
-          y = watermark.padding_pixels;
-          break;
-        case 'center':
-          x = (width - targetWidth) / 2;
-          y = (height - targetHeight) / 2;
-          break;
-      }
-
-      ctx.save();
-      ctx.globalAlpha = watermark.opacity;
-      ctx.drawImage(img, x, y, targetWidth, targetHeight);
-      ctx.restore();
-    };
-    img.src = watermark.logo_url;
-  }, [watermark]);
 
   const handleSaveContact = async () => {
     if (!appSettings) return;
@@ -218,10 +138,12 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ onBack }) => {
       official_country_code: officialCountryCode,
     };
 
+    try {
     await updateAppSettings(updated);
     setAppSettings(updated);
     setContactSavedMsg(true);
     setTimeout(() => setContactSavedMsg(false), 2500);
+    } catch(error) { await notify(error instanceof Error?error.message:"Contact update failed"); }
   };
 
   const handleSaveWatermark = async () => {
@@ -247,9 +169,12 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ onBack }) => {
       max_video_size_mb: maxVidSize,
     };
 
+    try {
     await updatePackage(updated);
+    await loadData();
     setLimitsSavedMsg(true);
     setTimeout(() => setLimitsSavedMsg(false), 2500);
+    } catch(error) { await notify(error instanceof Error?error.message:"Could not save limits"); }
   };
 
   const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -266,13 +191,13 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ onBack }) => {
   };
 
   const handleApprovePayment = async (id: string) => {
-    await approvePayment(id);
-    await loadData();
+    if(!(await confirm('Approve this payment and activate the selected package?', 'Approve payment'))) return;
+    try { await approvePayment(id); await loadData(); } catch(error) { await notify(error instanceof Error?error.message:'Payment update failed'); }
   };
 
   const handleRejectPayment = async (id: string) => {
-    await rejectPayment(id, 'Invalid reference number provided');
-    await loadData();
+    if(!(await confirm('Reject this payment request?', 'Reject payment'))) return;
+    try { await rejectPayment(id, 'Invalid reference number provided'); await loadData(); } catch(error) { await notify(error instanceof Error?error.message:'Payment update failed'); }
   };
 
   return (
@@ -375,15 +300,15 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ onBack }) => {
         </button>
 
         <button
-          onClick={() => setActiveTab('health')}
+          onClick={() => setActiveTab('email')}
           className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl transition-all shrink-0 ${
-            activeTab === 'health'
+            activeTab === 'email'
               ? 'bg-white dark:bg-[#1A241E] text-[#173B2A] dark:text-[#58C994] shadow-sm'
               : 'text-[#748078] dark:text-[#A7B8AC] hover:text-[#19241E] dark:hover:text-[#F2F6F2]'
           }`}
         >
           <ShieldCheck className="w-3.5 h-3.5" />
-          <span>Health & Connections</span>
+          <span>Resend Email</span>
         </button>
       </div>
 
@@ -461,10 +386,7 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ onBack }) => {
             <h3 className="font-bold text-sm text-[#19241E] dark:text-[#F2F6F2]">
               Watermark Placement & Appearance
             </h3>
-            <label className="flex items-start gap-3 rounded-xl border border-[#E4EAE5] dark:border-[#334539] p-3 cursor-pointer">
-              <input type="checkbox" checked={watermark.enabled_for_free} onChange={(event) => setWatermark({ ...watermark, enabled_for_free: event.target.checked })} className="mt-1" />
-              <span><strong className="block">Apply Breezing Status HD logo</strong><span className="block mt-1 text-[#748078] dark:text-[#A7B8AC]">Turn off to remove the logo from all new pictures. Plans that include clean images remain watermark-free.</span></span>
-            </label>
+            <p>Watermark on/off is controlled separately for each package in Packages. These settings control its appearance.</p>
             {wmSaveError && <p role="alert" className="text-red-600">{wmSaveError}</p>}
 
             <div>
@@ -495,7 +417,7 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ onBack }) => {
                 Watermark Position
               </label>
               <div className="grid grid-cols-3 gap-1.5">
-                {(['bottom-right', 'bottom-left', 'top-right', 'top-left', 'center'] as const).map(
+                {(['bottom-right', 'bottom-left', 'top-right', 'top-left', 'center', 'custom'] as const).map(
                   (pos) => (
                     <button
                       key={pos}
@@ -598,12 +520,7 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ onBack }) => {
               Updates in realtime. All newly submitted photos will apply this placement.
             </p>
 
-            <div className="w-full rounded-xl overflow-hidden border border-[#E4EAE5] dark:border-[#334539] shadow-inner bg-black flex items-center justify-center">
-              <canvas
-                ref={previewCanvasRef}
-                className="w-full h-auto object-contain max-h-72"
-              />
-            </div>
+            <WatermarkPreview settings={watermark} onChange={setWatermark} />
           </div>
         </div>
       )}
@@ -678,32 +595,7 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ onBack }) => {
       {activeTab === 'packages' && (
         <div className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            {packages.map((pkg) => (
-              <div
-                key={pkg.id}
-                className="p-4 rounded-2xl bg-white dark:bg-[#1A241E] border border-[#E4EAE5] dark:border-[#334539] space-y-3 shadow-sm text-xs"
-              >
-                <div className="flex items-center justify-between">
-                  <h4 className="font-bold text-sm text-[#19241E] dark:text-[#F2F6F2]">{pkg.name}</h4>
-                  <span className="font-extrabold text-[#173B2A] dark:text-[#58C994]">
-                    {pkg.price === 0 ? 'Free' : `${pkg.price.toLocaleString()} ${pkg.currency}`}
-                  </span>
-                </div>
-
-                <p className="text-[11px] text-[#748078] dark:text-[#A7B8AC] leading-relaxed">
-                  {pkg.description}
-                </p>
-
-                <ul className="space-y-1 text-[11px] text-[#748078] dark:text-[#A7B8AC] pt-2 border-t border-[#E4EAE5] dark:border-[#334539]">
-                  <li>• {pkg.monthly_pictures} pictures / month</li>
-                  <li>• {pkg.monthly_videos} videos / month</li>
-                  <li>• Max {pkg.max_video_size_mb} MB per video</li>
-                  <li className={pkg.watermark_required ? '' : 'text-[#21A36B] font-semibold'}>
-                    • {pkg.watermark_required ? 'Watermark enabled' : 'Watermark removed (clean)'}
-                  </li>
-                </ul>
-              </div>
-            ))}
+            {packages.map(pkg => <PackageEditor key={pkg.id} pkg={pkg} onSaved={loadData} />)}
           </div>
         </div>
       )}
@@ -799,7 +691,7 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ onBack }) => {
           </div>
 
           <button
-            onClick={() => alert('Cleanup routine invoked. Expired assets marked for deletion.')}
+            onClick={() => void notify('Expired media cleanup runs on the server schedule. This button does not manually delete files.')}
             className="w-full py-3 rounded-xl bg-[#173B2A] dark:bg-[#58C994] text-white dark:text-[#101713] font-bold text-xs shadow-sm hover:opacity-95"
           >
             Run 24h Purge Routine Now
@@ -807,115 +699,13 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ onBack }) => {
         </div>
       )}
 
-      {/* 7. Email and Connection Health Checks (Section 14 & Section 4) */}
-      {activeTab === 'health' && (
-        <div className="p-6 rounded-2xl bg-white dark:bg-[#1A241E] border border-[#E4EAE5] dark:border-[#334539] space-y-5 shadow-sm max-w-xl text-xs">
-          <div>
-            <h3 className="font-bold text-sm text-[#19241E] dark:text-[#F2F6F2] flex items-center gap-2">
-              <ShieldCheck className="w-4 h-4 text-[#21A36B]" />
-              <span>System & Integration Health Status</span>
-            </h3>
-            <p className="text-[#748078] dark:text-[#A7B8AC] mt-1 leading-relaxed">
-              Safe diagnostic health checks for Supabase, Cloudinary, Resend, and automated cleanup schedules. No secrets are ever exposed.
-            </p>
-          </div>
+      {activeTab === 'email' && <section className="p-6 border rounded-2xl bg-white dark:bg-[#1A241E] space-y-4 max-w-xl">
+        <h3 className="font-bold">Resend Email Service</h3>
+        <p className="text-sm">Send a test notification to the configured administrator email address.</p>
+        <button onClick={handleSendTestEmail} disabled={isSendingTestEmail} className="rounded-xl bg-[#173B2A] text-white p-3">{isSendingTestEmail?'Sending…':'Send test email'}</button>
+        {testEmailResult && <p role="status" className={testEmailResult.success?'text-green-700':'text-red-600'}>{testEmailResult.message}</p>}
+      </section>}
 
-          <div className="space-y-3">
-            {/* Supabase Status */}
-            <div className="p-4 rounded-xl bg-[#F8F9F7] dark:bg-[#101713] border border-[#E4EAE5] dark:border-[#334539] space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="font-bold text-[#19241E] dark:text-[#F2F6F2]">Supabase Backend</span>
-                <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-emerald-100 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400">
-                  Configured
-                </span>
-              </div>
-              <ul className="space-y-1 text-[11px] text-[#748078] dark:text-[#A7B8AC]">
-                <li>• Authentication Endpoint: Reachable</li>
-                <li>• Row Level Security (RLS): Active & Enforced</li>
-                <li>• Database Schema: 10 SQL Migrations Verified</li>
-                <li>• Project: mzmnjrrgnqvzzxzupydx.supabase.co</li>
-              </ul>
-            </div>
-
-            {/* Cloudinary Status */}
-            <div className="p-4 rounded-xl bg-[#F8F9F7] dark:bg-[#101713] border border-[#E4EAE5] dark:border-[#334539] space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="font-bold text-[#19241E] dark:text-[#F2F6F2]">Cloudinary Media Storage</span>
-                <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-emerald-100 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400">
-                  Configured
-                </span>
-              </div>
-              <ul className="space-y-1 text-[11px] text-[#748078] dark:text-[#A7B8AC]">
-                <li>• Cloud Name: scaycidy</li>
-                <li>• Signed Upload Authorization: Ready via Edge Function</li>
-                <li>• Authorized Media Downloads: Functional</li>
-                <li>• Zero Client Secret Leakage: Enforced</li>
-              </ul>
-            </div>
-
-            {/* Resend Status */}
-            <div className="p-4 rounded-xl bg-[#F8F9F7] dark:bg-[#101713] border border-[#E4EAE5] dark:border-[#334539] space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="font-bold text-[#19241E] dark:text-[#F2F6F2]">Resend Email Service</span>
-                <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-emerald-100 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400">
-                  Configured
-                </span>
-              </div>
-              <ul className="space-y-1 text-[11px] text-[#748078] dark:text-[#A7B8AC]">
-                <li>• Recipient: breezingstatus@gmail.com</li>
-                <li>• Sender: notifications@breezing.com</li>
-                <li>• Notification Trigger: Immediate on customer media submission</li>
-              </ul>
-
-              {/* Test Email Action */}
-              <div className="pt-2">
-                <button
-                  type="button"
-                  onClick={handleSendTestEmail}
-                  disabled={isSendingTestEmail}
-                  className="w-full py-2.5 px-3 rounded-lg border border-[#CBD5CD] dark:border-[#3E5244] bg-white dark:bg-[#1A241E] font-semibold text-xs text-[#173B2A] dark:text-[#58C994] hover:bg-slate-50 dark:hover:bg-[#25332A] transition-all flex items-center justify-center gap-2"
-                >
-                  {isSendingTestEmail ? (
-                    <span>Dispatching Test Email via Resend API...</span>
-                  ) : (
-                    <>
-                      <Check className="w-3.5 h-3.5" />
-                      <span>Send Real Test Notification Email</span>
-                    </>
-                  )}
-                </button>
-              </div>
-
-              {testEmailResult && (
-                <div
-                  className={`p-3 rounded-lg text-[11px] ${
-                    testEmailResult.success
-                      ? 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800'
-                      : 'bg-red-50 dark:bg-red-950/30 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800'
-                  }`}
-                >
-                  {testEmailResult.message}
-                </div>
-              )}
-            </div>
-
-            {/* Media Retention Cleanup Status */}
-            <div className="p-4 rounded-xl bg-[#F8F9F7] dark:bg-[#101713] border border-[#E4EAE5] dark:border-[#334539] space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="font-bold text-[#19241E] dark:text-[#F2F6F2]">Media Retention & Purge</span>
-                <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-emerald-100 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400">
-                  Scheduled
-                </span>
-              </div>
-              <ul className="space-y-1 text-[11px] text-[#748078] dark:text-[#A7B8AC]">
-                <li>• Automated Purge Window: 24 Hours from customer upload</li>
-                <li>• Scheduled Routine: Active (Every 15 Minutes)</li>
-                <li>• Outstanding Failures: 0</li>
-              </ul>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

@@ -1,7 +1,7 @@
 export type UserRole = 'customer' | 'admin';
 export type MediaType = 'image' | 'video';
 export type RequestStatus = 'pending' | 'processing' | 'downloaded' | 'sent' | 'failed' | 'expired';
-export type WatermarkPosition = 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left' | 'center';
+export type WatermarkPosition = 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left' | 'center' | 'custom';
 
 export interface UserProfile {
   id: string;
@@ -30,6 +30,7 @@ export interface SubscriptionPackage {
   monthly_pictures: number;
   monthly_videos: number;
   max_video_size_mb: number;
+  max_video_duration_seconds?: number;
   watermark_required: boolean;
   description: string;
   is_active: boolean;
@@ -91,6 +92,8 @@ export interface WatermarkSettings {
   opacity: number; // 0.1 to 1.0
   padding_pixels: number;
   enabled_for_free: boolean;
+  offset_x_percent?: number;
+  offset_y_percent?: number;
   updated_at?: string;
 }
 

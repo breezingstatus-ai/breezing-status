@@ -1,0 +1,13 @@
+import assert from 'node:assert/strict';import {readFile} from 'node:fs/promises';import {transform} from 'esbuild';
+const source=(await readFile(new URL('../supabase/functions/test-admin-email/index.ts',import.meta.url),'utf8')).replace(/^import .*;\s*$/gm,'');
+const {code}=await transform(source,{loader:'ts',format:'cjs'});let handler,admin=false,valid=true,providerOK=true,sent;
+const env={SUPABASE_URL:'https://test.invalid',SUPABASE_PUBLISHABLE_KEYS:'{"default":"test"}',RESEND_API_KEY:'test',ADMIN_NOTIFICATION_EMAIL:'admin@example.invalid',RESEND_FROM_EMAIL:'test@example.invalid'};
+new Function('serve','createClient','Deno','fetch',code)(fn=>handler=fn,()=>({auth:{getUser:async()=>({data:{user:valid?{id:'user'}:null},error:null})},rpc:async()=>({data:admin,error:null})}),{env:{get:name=>env[name]}},async(_url,options)=>{sent=JSON.parse(options.body);return Response.json(providerOK?{id:'test-email'}:{message:'Sender domain is not verified'},{status:providerOK?200:403});});
+const req=(auth=true)=>new Request('https://test.invalid',{method:'POST',headers:auth?{Authorization:'Bearer test'}:{},body:JSON.stringify({to:'attacker@example.invalid'})});
+assert.equal((await handler(new Request('https://test.invalid',{method:'OPTIONS'}))).status,200);
+assert.equal((await handler(req(false))).status,401);
+valid=false;assert.equal((await handler(req())).status,401);valid=true;
+assert.equal((await handler(req())).status,403);assert.equal(sent,undefined);
+admin=true;providerOK=false;const rejected=await handler(req());assert.equal(rejected.status,502);assert.match((await rejected.json()).error,/not verified/);
+providerOK=true;assert.equal((await handler(req())).status,200);assert.deepEqual(sent.to,['admin@example.invalid'],'Browser must not choose the email recipient');
+await Promise.resolve();console.log('Email checks passed: authentication, admin authorization, fixed recipient, honest provider failure/success.');

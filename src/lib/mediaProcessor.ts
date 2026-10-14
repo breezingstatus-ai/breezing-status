@@ -114,7 +114,7 @@ function applyGentleSharpen(ctx: CanvasRenderingContext2D, width: number, height
 /**
  * Renders watermark overlay onto the canvas based on configurable placement
  */
-function renderWatermark(
+export function renderWatermark(
   ctx: CanvasRenderingContext2D,
   watermarkImg: HTMLImageElement,
   canvasWidth: number,
@@ -148,12 +148,18 @@ function renderWatermark(
       x = padding_pixels;
       y = padding_pixels;
       break;
+    case 'custom':
+      x = (canvasWidth - targetWidth) * Math.max(0, Math.min(100, settings.offset_x_percent ?? 50)) / 100;
+      y = (canvasHeight - targetHeight) * Math.max(0, Math.min(100, settings.offset_y_percent ?? 50)) / 100;
+      break;
     case 'center':
       x = (canvasWidth - targetWidth) / 2;
       y = (canvasHeight - targetHeight) / 2;
       break;
   }
 
+  x = Math.max(0, Math.min(canvasWidth - targetWidth, x));
+  y = Math.max(0, Math.min(canvasHeight - targetHeight, y));
   ctx.save();
   ctx.globalAlpha = Math.max(0.1, Math.min(1.0, opacity));
   ctx.drawImage(watermarkImg, x, y, targetWidth, targetHeight);

@@ -304,6 +304,7 @@ export default function App() {
               watermarkSettings={defaultWatermark}
               appSettings={defaultAppSettings}
               onOpenAuth={() => setIsAuthModalOpen(true)}
+              onOpenProfile={() => setIsAccountModalOpen(true)}
               onOpenUpgrade={() => setIsUpgradeModalOpen(true)}
               onRequestCreated={(req) => {
                 setRecentRequests((prev) => [req, ...prev]);

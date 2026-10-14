@@ -1,3 +1,4 @@
+import { useDialogs } from '../common/Dialogs';
 import React, { useState, useEffect } from 'react';
 import {
   Users,
@@ -43,6 +44,7 @@ export const CustomerManagement: React.FC<CustomerManagementProps> = ({
   onSelectCustomerRequests,
 }) => {
   const [customers, setCustomers] = useState<AdminUserListItem[]>([]);
+  const { confirm, notify } = useDialogs();
   const [packages, setPackages] = useState<SubscriptionPackage[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterPackage, setFilterPackage] = useState<string>('all');
@@ -105,28 +107,35 @@ export const CustomerManagement: React.FC<CustomerManagementProps> = ({
   const handleSavePlan = async () => {
     if (!editingCustomer) return;
     setIsSavingPlan(true);
+    try {
     await updateCustomerPlan(editingCustomer.id, selectedPlanId, selectedDurationDays);
     setIsSavingPlan(false);
     setEditingCustomer(null);
     await loadData();
     triggerToast(`Updated ${editingCustomer.full_name}'s subscription plan!`);
+    } catch(error) { await notify(error instanceof Error ? error.message : 'Plan update failed'); }
+    finally { setIsSavingPlan(false); }
   };
 
   const handleResetQuota = async (customer: AdminUserListItem) => {
-    if (confirm(`Reset monthly quota usage for ${customer.full_name} back to 0?`)) {
+    if (await confirm(`Reset ${customer.full_name} to the Free package and clear current monthly usage?`)) {
+      try {
       await resetCustomerQuota(customer.id);
       await loadData();
-      triggerToast(`Quota reset for ${customer.full_name}.`);
+      triggerToast(`${customer.full_name} reset to Free.`);
+      } catch(error) { await notify(error instanceof Error ? error.message : "Reset failed"); }
     }
   };
 
   const handleToggleStatus = async (customer: AdminUserListItem) => {
     const nextStatus = customer.status === 'active' ? 'suspended' : 'active';
     const actionText = nextStatus === 'active' ? 'reactivate' : 'suspend';
-    if (confirm(`Are you sure you want to ${actionText} ${customer.full_name}'s account?`)) {
+    if (await confirm(`Are you sure you want to ${actionText} ${customer.full_name}'s account?`)) {
+      try {
       await toggleCustomerStatus(customer.id, nextStatus);
       await loadData();
       triggerToast(`Account status set to ${nextStatus}.`);
+      } catch(error) { await notify(error instanceof Error ? error.message : "Status update failed"); }
     }
   };
 

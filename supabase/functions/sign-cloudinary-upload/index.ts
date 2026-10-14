@@ -47,9 +47,12 @@ serve(async (req) => {
       return new Response(JSON.stringify({ error: "Cloudinary credentials are not configured in Supabase Edge Function secrets" }), { status: 503, headers: corsHeaders });
     }
 
-    const { mediaType, count, reservationToken } = await req.json();
+    const { mediaType, count, reservationToken, assetIndex = 0 } = await req.json();
     const mediaCount = Number(count) || 1;
     const token = reservationToken || `res_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+    if (!/^[A-Za-z0-9_-]{8,128}$/.test(token) || !Number.isInteger(assetIndex) || assetIndex < 0 || assetIndex >= mediaCount) {
+      return new Response(JSON.stringify({error:'Invalid upload reservation or file index'}),{status:400,headers:corsHeaders});
+    }
 
     // 2. Reserve Quota atomically with reservation token
     const { data: reserveResult, error: reserveError } = await supabase.rpc("reserve_media_quota", {
@@ -69,9 +72,11 @@ serve(async (req) => {
     // 3. Generate Cloudinary Signature
     const timestamp = Math.round(new Date().getTime() / 1000);
     const folder = `breezing_hd_status/${user.id}`;
+    const publicId = `${token}/${assetIndex}`;
+    const allowedFormats = mediaType === 'video' ? 'mp4,mov,webm,mkv,m4v,avi,wmv,flv' : 'jpg,jpeg,png,webp';
     
     // Cloudinary signature string parameters must be sorted alphabetically
-    const paramsToSign = `folder=${folder}&timestamp=${timestamp}${cloudinaryApiSecret}`;
+    const paramsToSign = `allowed_formats=${allowedFormats}&folder=${folder}&overwrite=false&public_id=${publicId}&timestamp=${timestamp}${cloudinaryApiSecret}`;
     
     // Compute SHA-1
     const encoder = new TextEncoder();
@@ -85,6 +90,9 @@ serve(async (req) => {
         signature,
         timestamp,
         folder,
+        publicId,
+        allowedFormats,
+        overwrite: false,
         apiKey: cloudinaryApiKey,
         cloudName: cloudinaryCloudName,
         reservationToken: token,

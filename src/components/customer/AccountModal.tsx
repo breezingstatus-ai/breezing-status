@@ -1,4 +1,5 @@
-import React, { useState, useRef } from 'react';
+import { useDialogs } from '../common/Dialogs';
+import React, { useState, useRef, useEffect } from 'react';
 import { 
   X, 
   User, 
@@ -51,22 +52,37 @@ export const AccountModal: React.FC<AccountModalProps> = ({
   onToggleTheme,
   appSettings,
 }) => {
+  const { confirm, notify } = useDialogs();
   const [isEditingPhone, setIsEditingPhone] = useState(false);
   const [countryCode, setCountryCode] = useState(user.country_code || '+265');
   const [localPhone, setLocalPhone] = useState(
     user.whatsapp_number.replace(user.country_code || '+265', '')
   );
+  const [deliveryName, setDeliveryName] = useState(user.full_name || '');
+  const [deliveryConsent, setDeliveryConsent] = useState(user.whatsapp_consent);
   const [phoneError, setPhoneError] = useState<string | null>(null);
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
   const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const avatarInputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (!isOpen) return;
+    setDeliveryName(user.full_name || '');
+    setDeliveryConsent(user.whatsapp_consent);
+    setCountryCode(user.country_code || '+265');
+    setLocalPhone(user.whatsapp_number.replace(user.country_code || '+265', ''));
+    setIsEditingPhone(!user.whatsapp_number || !user.whatsapp_consent || (user.full_name?.trim().length || 0) < 2);
+  }, [isOpen, user.id, user.full_name, user.whatsapp_number, user.country_code, user.whatsapp_consent]);
 
   if (!isOpen) return null;
 
   const handleSavePhone = async () => {
     setPhoneError(null);
+    if (deliveryName.trim().length < 2 || deliveryName.trim().length > 120 || !deliveryConsent) {
+      setPhoneError('Enter your full name and agree to receive your media on WhatsApp.');
+      return;
+    }
     const normalized = normalizePhoneNumber(countryCode, localPhone);
     const valid = validatePhoneNumber(normalized);
     if (!valid.isValid) {
@@ -78,6 +94,8 @@ export const AccountModal: React.FC<AccountModalProps> = ({
       ...user,
       whatsapp_number: normalized,
       country_code: countryCode,
+      full_name: deliveryName.trim(),
+      whatsapp_consent: deliveryConsent,
     };
     try {
       await saveUserProfile(updated);
@@ -92,7 +110,7 @@ export const AccountModal: React.FC<AccountModalProps> = ({
     const file = e.target.files?.[0];
     if (!file) return;
     if (!file.type.startsWith('image/')) {
-      alert('Please choose an image file (JPEG, PNG, WebP).');
+      void notify('Please choose an image file (JPEG, PNG, WebP).');
       return;
     }
     try {
@@ -103,7 +121,7 @@ export const AccountModal: React.FC<AccountModalProps> = ({
       onUserUpdated(updated);
     } catch (err) {
       console.error(err);
-      alert('Failed to process profile photo.');
+      void notify('Failed to process profile photo.');
     } finally {
       setIsUploadingPhoto(false);
     }
@@ -223,6 +241,8 @@ export const AccountModal: React.FC<AccountModalProps> = ({
 
               {isEditingPhone ? (
                 <div className="mt-2 space-y-2">
+                  <label className="block">Full name<input value={deliveryName} onChange={event=>setDeliveryName(event.target.value)} required minLength={2} maxLength={120} className="w-full mt-1 border rounded-lg p-2 bg-transparent" /></label>
+                  <label className="flex items-start gap-2"><input type="checkbox" checked={deliveryConsent} onChange={event=>setDeliveryConsent(event.target.checked)} />I agree to receive my prepared media at this WhatsApp number.</label>
                   <div className="flex gap-1.5">
                     <select
                       value={countryCode}

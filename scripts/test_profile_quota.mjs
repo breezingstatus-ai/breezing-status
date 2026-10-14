@@ -9,6 +9,7 @@ const requests=[];
 const profile={id:'11111111-1111-4111-8111-111111111111',email:'test@example.invalid',full_name:'Test',whatsapp_number:'+265991234567',country_code:'+265',whatsapp_consent:true,role:'customer',package_id:'free',status:'active',created_at:new Date().toISOString()};
 let rejectSave=false;
 let rejectWatermarkSave=false;
+let packageRule={id:'free',name:'Free',price:0,currency:'MWK',duration_days:30,monthly_pictures:3,monthly_videos:1,max_video_size_mb:1,max_video_duration_seconds:10,watermark_required:true,is_active:true,description:'Test'};
 globalThis.fetch=async(url,options={})=>{
  const path=new URL(url).pathname;
  requests.push({path,method:options.method||'GET',headers:options.headers,body:options.body});
@@ -17,6 +18,8 @@ globalThis.fetch=async(url,options={})=>{
  if(path.endsWith('/profiles')) return rejectSave?Response.json({code:'42501',message:'Save rejected'},{status:401}):Response.json(profile);
  if(path.endsWith('/watermark_settings')) return rejectWatermarkSave?Response.json({code:'42501',message:'Watermark save rejected'},{status:403}):Response.json({id:1,logo_url:'/watermark-logo.png',enabled_for_free:false});
  if(path.endsWith('/rpc/is_admin')) return Response.json({message:'Permission check unavailable'},{status:500});
+ if(path.endsWith('/packages')) {if(options.method==='POST') packageRule=JSON.parse(options.body);return Response.json([packageRule]);}
+ if(path.endsWith('/rpc/reset_customer_to_free')) return Response.json(null);
  throw new Error('Unexpected test endpoint: '+path);
 };
 const output=await build({entryPoints:[fileURLToPath(new URL('../src/lib/supabase.ts',import.meta.url))],bundle:true,platform:'node',format:'cjs',write:false,logLevel:'silent',define:{'import.meta.env':JSON.stringify({VITE_SUPABASE_URL:'https://test.invalid',VITE_SUPABASE_PUBLISHABLE_KEY:'test-key'})}});
@@ -52,5 +55,12 @@ await assert.rejects(()=>api.updateWatermarkSettings({id:1,enabled_for_free:true
 assert.equal(JSON.parse(storage.get('breezing_watermark')).enabled_for_free,false,'A failed save must not enable the logo locally');
 storage.set('breezing_current_user',JSON.stringify({...profile,role:'admin'}));
 assert.equal(await api.checkIsAdmin(),false,'Production admin access must fail closed when the server check fails');
+await api.updatePackage({...packageRule,price:1250});
+assert.equal((await api.getPackages())[0].price,1250);
+assert.equal((await api.getPackages())[0].monthly_pictures,3);
+await assert.rejects(()=>api.updatePackage({...packageRule,monthly_videos:-1}),/valid prices/);
+await api.resetCustomerQuota(profile.id);
+assert.equal(JSON.parse(requests.find(r=>r.path.endsWith('/rpc/reset_customer_to_free')).body).p_user_id,profile.id);
+assert.deepEqual(await api.getFailedDeletionAssets(),[],'Failed authorization must not invoke a protected cleanup RPC');
 await api.supabase.auth.stopAutoRefresh();
 console.log('Profile/quota regression checks passed: empty month, PATCH save, editable fields, rejected saves propagate.');

@@ -24,7 +24,7 @@ import {
 } from '../../types';
 import { processStatusPhotograph, inspectVideoFile } from '../../lib/mediaProcessor';
 import { uploadToCloudinary } from '../../lib/cloudinary';
-import { createUploadRequest, reserveMediaQuota, releaseMediaQuota, getWatermarkSettings } from '../../lib/supabase';
+import { createUploadRequest, reserveMediaQuota, releaseMediaQuota, getWatermarkSettings, getCurrentUser, getPackages } from '../../lib/supabase';
 import { downloadContactVCard } from '../../lib/vcard';
 import { ProcessingAnimation, ProcessingStage } from './ProcessingAnimation';
 
@@ -37,6 +37,7 @@ interface UploadSectionProps {
   appSettings: AppSettings;
   onOpenAuth: () => void;
   onOpenUpgrade: () => void;
+  onOpenProfile: () => void;
   onRequestCreated: (request: UploadRequest) => void;
   onViewRequestStatus: (request: UploadRequest) => void;
 }
@@ -58,6 +59,7 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
   appSettings,
   onOpenAuth,
   onOpenUpgrade,
+  onOpenProfile,
   onRequestCreated,
   onViewRequestStatus,
 }) => {
@@ -127,7 +129,7 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
         }
 
         try {
-          const inspected = await inspectVideoFile(file, currentPackage.max_video_size_mb, 60);
+          const inspected = await inspectVideoFile(file, currentPackage.max_video_size_mb, currentPackage.max_video_duration_seconds ?? 60);
           newItems.push({
             id: `vid-${Date.now()}-${i}`,
             file,
@@ -175,6 +177,14 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
     let isQuotaReserved = false;
 
     try {
+      const profile = await getCurrentUser();
+      if (profile?.status === 'suspended') throw new Error('Your account is suspended. Contact the administrator.');
+      if (!profile || !profile.full_name?.trim() || profile.full_name.trim().length < 2 || profile.full_name.trim().length > 120 || !/^\+[1-9]\d{7,14}$/.test(profile.whatsapp_number || '') || !profile.whatsapp_consent) {
+        onOpenProfile();
+        throw new Error('Enter your name and valid WhatsApp number, and agree to WhatsApp delivery before uploading.');
+      }
+      const latestPackage = (await getPackages()).find(pkg => pkg.id === profile.package_id && pkg.is_active);
+      if (!latestPackage) throw new Error('Your package is unavailable. Contact the administrator.');
       // Stage 1: Photo Received / Video Received
       setProcessingStage(1);
       setProcessingPercent(15);
@@ -187,11 +197,14 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
         if (item.type === 'image' && item.file.size > 25 * 1024 * 1024) {
           throw new Error(`File ${item.file.name} exceeds maximum allowed size (25MB).`);
         }
-        if (item.type === 'video' && item.file.size > currentPackage.max_video_size_mb * 1024 * 1024) {
-          throw new Error(`Video exceeds maximum allowed size (${currentPackage.max_video_size_mb}MB).`);
+        if (item.type === 'video' && item.file.size > latestPackage.max_video_size_mb * 1024 * 1024) {
+          throw new Error(`Video exceeds maximum allowed size (${latestPackage.max_video_size_mb}MB).`);
         }
       }
 
+      for (const item of selectedFiles) {
+        if (item.type === 'video') await inspectVideoFile(item.file, latestPackage.max_video_size_mb, latestPackage.max_video_duration_seconds ?? 60);
+      }
       // Pre-allocate quota atomically before starting physical media processing & upload
       await reserveMediaQuota(user.id, selectedFiles.length, activeTab, reservationToken);
       isQuotaReserved = true;
@@ -214,7 +227,7 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
           const processed = await processStatusPhotograph(
             item.file,
             latestWatermark,
-            currentPackage.watermark_required && latestWatermark.enabled_for_free
+            false // Branding is applied by the trusted server, not the browser.
           );
 
           // Stage 4: Optimizing Your Media (Upload with progress)
@@ -228,7 +241,7 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
               const slice = (1 / totalFiles) * 35 * (pct / 100);
               setProcessingPercent(Math.min(85, Math.round(base + slice)));
             },
-            { token: reservationToken, count: totalFiles }
+            { token: reservationToken, count: totalFiles, index: i }
           );
 
           uploadedAssets.push({
@@ -260,7 +273,7 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
               const slice = (1 / totalFiles) * 35 * (pct / 100);
               setProcessingPercent(Math.min(85, Math.round(base + slice)));
             },
-            { token: reservationToken, count: totalFiles }
+            { token: reservationToken, count: totalFiles, index: i }
           );
 
           uploadedAssets.push({
@@ -446,7 +459,7 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
             <p className="mt-1 text-xs text-[#748078] dark:text-[#A7B8AC]">
               {activeTab === 'image'
                 ? 'High-res JPEG, JPG, WebP. Multiple files supported.'
-                : `Max ${currentPackage.max_video_size_mb} MB · Up to 60 seconds`}
+                : `Max ${currentPackage.max_video_size_mb} MB · Up to ${currentPackage.max_video_duration_seconds ?? 60} seconds`}
             </p>
 
             <span className="mt-4 inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#173B2A] dark:bg-[#58C994] text-white dark:text-[#101713] text-xs font-semibold shadow-sm hover:opacity-95 transition-all">

@@ -1,3 +1,4 @@
+import { useDialogs } from '../common/Dialogs';
 import React, { useState, useEffect } from 'react';
 import {
   Search,
@@ -36,6 +37,7 @@ interface AdminDashboardProps {
 }
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onOpenSettings, onViewCustomerApp }) => {
+  const { confirm, notify } = useDialogs();
   const [adminTab, setAdminTab] = useState<'requests' | 'customers'>('requests');
   const [requests, setRequests] = useState<UploadRequest[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -107,9 +109,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onOpenSettings, 
   };
 
   const handleDelete = async (requestId: string) => {
-    if (confirm('Are you sure you want to delete this customer request?')) {
-      await deleteUploadRequest(requestId);
-      await loadRequests();
+    if (await confirm('Are you sure you want to delete this customer request?')) {
+      try { await deleteUploadRequest(requestId); await loadRequests(); } catch(error) { await notify(error instanceof Error?error.message:'Request deletion failed'); }
     }
   };
 
@@ -165,7 +166,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onOpenSettings, 
         await handleStatusChange(req.id, 'downloaded');
       }
     } catch (err) {
-      alert('Your browser may have restricted multiple simultaneous downloads. Use individual downloads or Download ZIP.');
+      void notify('Your browser may have restricted multiple simultaneous downloads. Use individual downloads or Download ZIP.');
       console.error(err);
     } finally {
       setIsDownloadingSeparately(null);
@@ -207,7 +208,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onOpenSettings, 
         await handleStatusChange(req.id, 'downloaded');
       }
     } catch (err) {
-      alert('Failed to generate ZIP file.');
+      void notify('Failed to generate ZIP file.');
       console.error(err);
     } finally {
       setIsZipping(null);

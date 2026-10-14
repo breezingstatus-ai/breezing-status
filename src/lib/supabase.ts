@@ -123,11 +123,20 @@ const STORAGE_KEYS = {
 // Listeners for realtime reactive UI
 type Listener = () => void;
 const listeners = new Set<Listener>();
+let stateChannel: ReturnType<NonNullable<typeof supabase>['channel']> | null = null;
 
 export function subscribeToStateUpdates(listener: Listener): () => void {
   listeners.add(listener);
+  if (supabase && !stateChannel) {
+    stateChannel = supabase.channel('app-state');
+    for (const table of ['packages','watermark_settings','profiles','usage_quotas','app_settings']) {
+      stateChannel.on('postgres_changes', {event:'*', schema:'public', table}, notifyStateChange);
+    }
+    stateChannel.subscribe();
+  }
   return () => {
     listeners.delete(listener);
+    if (!listeners.size && stateChannel && supabase) { void supabase.removeChannel(stateChannel); stateChannel = null; }
   };
 }
 
@@ -292,7 +301,8 @@ export async function saveUserProfile(profile: UserProfile): Promise<void> {
 
 export async function getPackages(): Promise<SubscriptionPackage[]> {
   if (isSupabaseConfigured() && supabase) {
-    const { data } = await supabase.from('packages').select('*').order('price', { ascending: true });
+    const { data, error } = await supabase.from('packages').select('*').order('price', { ascending: true });
+    if (error) throw new Error(error.message);
     if (data && data.length > 0) return data;
   }
   return getStored<SubscriptionPackage[]>(STORAGE_KEYS.PACKAGES, DEFAULT_PACKAGES);
@@ -300,7 +310,10 @@ export async function getPackages(): Promise<SubscriptionPackage[]> {
 
 export async function updatePackage(pkg: SubscriptionPackage): Promise<void> {
   if (isSupabaseConfigured() && supabase) {
-    await supabase.from('packages').upsert(pkg);
+    const numbers = [pkg.price, pkg.duration_days, pkg.monthly_pictures, pkg.monthly_videos, pkg.max_video_size_mb, pkg.max_video_duration_seconds ?? 60];
+    if (!pkg.name.trim() || numbers.some(n => !Number.isFinite(n) || n < 0) || pkg.duration_days < 1 || pkg.max_video_size_mb < 1 || (pkg.max_video_duration_seconds ?? 60) < 1 || numbers.slice(1).some(n => !Number.isInteger(n))) throw new Error('Enter valid prices and whole-number package limits.');
+    const { error } = await supabase.from('packages').upsert(pkg);
+    if (error) throw new Error(error.message);
   }
   const current = await getPackages();
   const updated = current.map((p) => (p.id === pkg.id ? pkg : p));
@@ -470,8 +483,7 @@ export async function createUploadRequest(
   notes?: string,
   reservationToken?: string
 ): Promise<UploadRequest> {
-  const watermark = await getWatermarkSettings();
-  const watermarkApplied = mediaType === 'image' && pkg.watermark_required && watermark.enabled_for_free;
+  const watermarkApplied = pkg.watermark_required;
   const requestCode = `BRZ-${Math.floor(10000 + Math.random() * 90000)}`;
   const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
 
@@ -519,7 +531,7 @@ export async function createUploadRequest(
         if (!edgeError && edgeData?.request) {
           const req: UploadRequest = {
             ...edgeData.request,
-            assets,
+            assets: edgeData.request.assets || assets,
           };
           const requests = getStored<UploadRequest[]>(STORAGE_KEYS.REQUESTS, []);
           setStored(STORAGE_KEYS.REQUESTS, [req, ...requests.filter((r) => r.id !== req.id)]);
@@ -646,7 +658,8 @@ export async function updateRequestStatus(
 
 export async function deleteUploadRequest(requestId: string): Promise<void> {
   if (isSupabaseConfigured() && supabase) {
-    await supabase.from('upload_requests').delete().eq('id', requestId);
+    const {error} = await supabase.from('upload_requests').delete().eq('id', requestId);
+    if(error) throw new Error(error.message);
   }
   const requests = getStored<UploadRequest[]>(STORAGE_KEYS.REQUESTS, []);
   const filtered = requests.filter((r) => r.id !== requestId);
@@ -659,14 +672,16 @@ export async function deleteUploadRequest(requestId: string): Promise<void> {
 
 export async function submitPayment(payment: Omit<PaymentRequest, 'id' | 'status' | 'created_at'>): Promise<PaymentRequest> {
   const newPayment: PaymentRequest = {
-    id: `pay-${Date.now()}`,
+    id: crypto.randomUUID(),
     ...payment,
     status: 'pending',
     created_at: new Date().toISOString(),
   };
 
   if (isSupabaseConfigured() && supabase) {
-    await supabase.from('payment_requests').insert(newPayment);
+    const {data,error} = await supabase.from('payment_requests').insert({id:newPayment.id,user_id:payment.user_id,package_id:payment.package_id,amount:payment.amount,currency:payment.currency,payment_method:payment.payment_method,reference_number:payment.reference_number,notes:payment.notes,status:'pending'}).select('*').single();
+    if(error) throw new Error(error.message);
+    Object.assign(newPayment,data);
   }
 
   const payments = getStored<PaymentRequest[]>(STORAGE_KEYS.PAYMENTS, []);
@@ -676,13 +691,20 @@ export async function submitPayment(payment: Omit<PaymentRequest, 'id' | 'status
 
 export async function getPaymentRequests(): Promise<PaymentRequest[]> {
   if (isSupabaseConfigured() && supabase) {
-    const { data } = await supabase.from('payment_requests').select('*').order('created_at', { ascending: false });
-    if (data && data.length > 0) return data;
+    const { data, error } = await supabase.from('payment_requests').select('*').order('created_at', { ascending: false });
+    if(error) throw new Error(error.message);
+    const packages = await getPackages();
+    return (data || []).map(payment => ({...payment,package_name:packages.find(pkg=>pkg.id===payment.package_id)?.name}));
   }
   return getStored<PaymentRequest[]>(STORAGE_KEYS.PAYMENTS, []);
 }
 
 export async function approvePayment(paymentId: string): Promise<void> {
+  if(supabase) {
+    const {error} = await supabase.from('payment_requests').update({status:'approved'}).eq('id',paymentId);
+    if(error) throw new Error(error.message);
+    notifyStateChange();return;
+  }
   const payments = await getPaymentRequests();
   const payment = payments.find((p) => p.id === paymentId);
   if (!payment) return;
@@ -703,6 +725,11 @@ export async function approvePayment(paymentId: string): Promise<void> {
 }
 
 export async function rejectPayment(paymentId: string, adminNotes?: string): Promise<void> {
+  if(supabase) {
+    const {error} = await supabase.from('payment_requests').update({status:'rejected',admin_notes:adminNotes}).eq('id',paymentId);
+    if(error) throw new Error(error.message);
+    notifyStateChange();return;
+  }
   const payments = await getPaymentRequests();
   const payment = payments.find((p) => p.id === paymentId);
   if (!payment) return;
@@ -720,10 +747,15 @@ export async function rejectPayment(paymentId: string, adminNotes?: string): Pro
 // ==========================================
 
 export async function getAllCustomers(): Promise<AdminUserListItem[]> {
-  const currentMonth = new Date().toISOString().slice(0, 7);
+  const currentMonth = new Intl.DateTimeFormat('en-CA', {timeZone:'Africa/Blantyre', year:'numeric',month:'2-digit'}).format(new Date()).slice(0,7);
   const pkgs = await getPackages();
   const pkgMap = new Map(pkgs.map((p) => [p.id, p]));
   const quotas = getStored<Record<string, UsageQuota>>(STORAGE_KEYS.QUOTAS, {});
+  if (supabase) {
+    const {data,error} = await supabase.from('usage_quotas').select('*').eq('month_year',currentMonth);
+    if(error) throw new Error(error.message);
+    for(const quota of data || []) quotas[`${quota.user_id}_${currentMonth}`] = quota;
+  }
   const allRequests = await getUploadRequests().catch(() => []);
 
   let profiles: UserProfile[] = [];
@@ -813,12 +845,13 @@ export async function updateCustomerPlan(
 
   if (isSupabaseConfigured() && supabase) {
     try {
-      await supabase
+      const { error } = await supabase
         .from('profiles')
         .update({ package_id: packageId, package_expiry: expiry, updated_at: new Date().toISOString() })
         .eq('id', userId);
+      if (error) throw new Error(error.message);
     } catch (e) {
-      console.warn(e);
+      throw e;
     }
   }
 
@@ -839,6 +872,13 @@ export async function updateCustomerPlan(
 }
 
 export async function resetCustomerQuota(userId: string): Promise<void> {
+  if (isSupabaseConfigured() && supabase) {
+    const { error } = await supabase.rpc('reset_customer_to_free', {p_user_id: userId});
+    if (error) throw new Error(error.message);
+    notifyStateChange();
+    return;
+  }
+  await updateCustomerPlan(userId, 'free', 30);
   const currentMonth = new Date().toISOString().slice(0, 7);
   const quotas = getStored<Record<string, UsageQuota>>(STORAGE_KEYS.QUOTAS, {});
   const qKey = `${userId}_${currentMonth}`;
@@ -858,9 +898,10 @@ export async function resetCustomerQuota(userId: string): Promise<void> {
 export async function toggleCustomerStatus(userId: string, status: 'active' | 'suspended'): Promise<void> {
   if (isSupabaseConfigured() && supabase) {
     try {
-      await supabase.from('profiles').update({ status, updated_at: new Date().toISOString() }).eq('id', userId);
+      const { error } = await supabase.from('profiles').update({ status, updated_at: new Date().toISOString() }).eq('id', userId);
+      if (error) throw new Error(error.message);
     } catch (e) {
-      console.warn(e);
+      throw e;
     }
   }
 
@@ -962,6 +1003,7 @@ export async function uploadProfileAvatar(file: File, userId: string): Promise<s
 
 export async function getFailedDeletionAssets(): Promise<any[]> {
   if (isSupabaseConfigured() && supabase) {
+    if (!(await checkIsAdmin())) return [];
     try {
       const { data, error } = await supabase.rpc('get_failed_deletion_assets', { p_limit: 20 });
       if (!error && data) return data;

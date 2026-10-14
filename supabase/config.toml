@@ -5,3 +5,6 @@ verify_jwt = false
 
 [functions.finalize-request]
 verify_jwt = false
+
+[functions.test-admin-email]
+verify_jwt = false

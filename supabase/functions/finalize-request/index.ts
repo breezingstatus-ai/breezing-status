@@ -49,6 +49,7 @@ serve(async (req) => {
     const payload = await req.json();
     const { mediaType, assets, customerNotes, reservationToken } = payload;
 
+    if (!['image','video'].includes(mediaType)) throw new Error('Invalid media type');
     if (!assets || !Array.isArray(assets) || assets.length === 0) {
       return new Response(JSON.stringify({ error: "No media assets submitted" }), { status: 400, headers: corsHeaders });
     }
@@ -86,9 +87,10 @@ serve(async (req) => {
       return new Response(JSON.stringify({ error: "Media assets do not match reserved count or type" }), { status: 400, headers: corsHeaders });
     }
 
+    if (new Set(assets.map(a=>a.public_id)).size !== assets.length) throw new Error('Duplicate media in one submission');
     // Verify each asset has non-empty Cloudinary identifiers
-    for (const a of assets) {
-      if (!a.public_id || !a.secure_url) {
+    for (const [index, a] of assets.entries()) {
+      if (a.public_id !== `breezing_hd_status/${user.id}/${reservationToken}/${index}` || !a.secure_url) {
         return new Response(JSON.stringify({ error: "Invalid asset: missing Cloudinary public_id or secure_url" }), { status: 400, headers: corsHeaders });
       }
     }
@@ -125,12 +127,15 @@ serve(async (req) => {
           // Populate database records directly from verified Cloudinary API response
           a.public_id = cldData.public_id;
           a.asset_id = cldData.asset_id || a.asset_id || null;
-          a.secure_url = cldData.secure_url || a.secure_url;
-          a.bytes = cldData.bytes ?? a.bytes ?? 0;
-          a.width = cldData.width ?? a.width ?? null;
-          a.height = cldData.height ?? a.height ?? null;
+          a.secure_url = cldData.secure_url;
+          if (!a.secure_url?.startsWith(`https://res.cloudinary.com/${cloudinaryCloudName}/`)) throw new Error('Cloudinary did not return a trusted delivery URL');
+          a.bytes = cldData.bytes;
+          if (!Number.isFinite(a.bytes) || a.bytes <= 0) throw new Error('Cloudinary did not return a valid file size');
+          a.width = cldData.width;
+          a.height = cldData.height;
+          if (!Number.isFinite(a.width) || !Number.isFinite(a.height) || a.width <= 0 || a.height <= 0) throw new Error('Cloudinary did not return valid media dimensions');
           a.format = cldData.format || a.format || "jpg";
-          if (resourceType === "video" && cldData.duration) {
+          if (resourceType === "video") {
             a.duration = cldData.duration;
           }
         } catch (fetchErr: any) {
@@ -142,7 +147,7 @@ serve(async (req) => {
         }
       }
     } else {
-      console.warn("Cloudinary API credentials not configured in environment; proceeding with schema validation.");
+      throw new Error('Cloudinary verification credentials are missing');
     }
 
     // 1. Get user profile
@@ -159,15 +164,64 @@ serve(async (req) => {
     if (!profileRow) {
       return new Response(JSON.stringify({ error: "Profile not found" }), { status: 404, headers: corsHeaders });
     }
+    if (profileRow.status !== 'active' || !profileRow.full_name?.trim() || profileRow.full_name.trim().length < 2 || !/^\+[1-9]\d{7,14}$/.test(profileRow.whatsapp_number || '') || !profileRow.whatsapp_consent) {
+      return new Response(JSON.stringify({error:'Name, valid WhatsApp number, and delivery consent are required for an active account'}),{status:400,headers:corsHeaders});
+    }
     // Fetch the package separately: a missing/ambiguous PostgREST relationship
     // must not hide a valid customer profile behind a false 404.
     const { data: pkg, error: packageError } = await supabaseAdmin
       .from("packages").select("*").eq("id", profileRow.package_id || "free").single();
+    if (!pkg?.is_active) throw new Error("Package unavailable");
     if (packageError) throw new Error(`Package lookup failed: ${packageError.message}`);
     const profile = { ...profileRow, packages: pkg };
     const { data: watermark, error: watermarkError } = await supabaseAdmin
-      .from("watermark_settings").select("enabled_for_free").eq("id", 1).single();
+      .from("watermark_settings").select("*").eq("id", 1).single();
     if (watermarkError) throw new Error(`Watermark settings lookup failed: ${watermarkError.message}`);
+
+    for (const asset of assets) {
+      if (mediaType === 'image' && asset.bytes > 25 * 1024 * 1024) throw new Error('Picture exceeds 25 MB');
+      if (mediaType === 'video' && (asset.bytes > pkg.max_video_size_mb * 1024 * 1024 || !Number.isFinite(asset.duration) || asset.duration <= 0 || asset.duration > pkg.max_video_duration_seconds)) throw new Error('Video exceeds the package size or duration limit');
+    }
+    // Apply branding to trusted delivery URLs on the server. Browser flags cannot remove it.
+    if (pkg.watermark_required) {
+      const appUrl = Deno.env.get('APP_URL') || 'https://breezing-status-hd.breezingstatus.workers.dev';
+      const logoSource = watermark.logo_url.startsWith('data:image/png;base64,') ? watermark.logo_url : new URL(watermark.logo_url, appUrl).href;
+      if (!logoSource.startsWith('data:image/png;base64,') && new URL(logoSource).origin !== new URL(appUrl).origin) throw new Error('Use the official logo or upload a PNG in watermark settings');
+      const hash = async (value: string, algorithm = 'SHA-1') => Array.from(new Uint8Array(await crypto.subtle.digest(algorithm,new TextEncoder().encode(value)))).map(x=>x.toString(16).padStart(2,'0')).join('');
+      const logoId = `breezing_brand/${(await hash(logoSource,'SHA-256')).slice(0,32)}`;
+      const apiBase = `https://api.cloudinary.com/v1_1/${cloudinaryCloudName}`;
+      const authorization = `Basic ${btoa(`${cloudinaryApiKey}:${cloudinaryApiSecret}`)}`;
+      let logoResponse = await fetch(`${apiBase}/resources/image/upload/${encodeURIComponent(logoId)}`,{headers:{Authorization:authorization}});
+      let logo;
+      if (logoResponse.ok) logo = await logoResponse.json();
+      else if (logoResponse.status === 404) {
+        const timestamp = Math.floor(Date.now()/1000);
+        const form = new FormData();
+        form.set('file',logoSource);form.set('public_id',logoId);form.set('overwrite','false');form.set('timestamp',String(timestamp));form.set('api_key',cloudinaryApiKey);
+        form.set('signature',await hash(`overwrite=false&public_id=${logoId}&timestamp=${timestamp}${cloudinaryApiSecret}`));
+        logoResponse = await fetch(`${apiBase}/image/upload`,{method:'POST',body:form});
+        logo = await logoResponse.json();
+        if (!logoResponse.ok) throw new Error(logo.error?.message || 'Logo upload failed');
+      } else throw new Error('Could not verify the watermark logo');
+      if (!logo.width || !logo.height) throw new Error('Invalid watermark logo dimensions');
+      for (const asset of assets) {
+        const width = Math.max(80,Math.min(asset.width * watermark.relative_size,450));
+        const height = width * logo.height / logo.width;
+        let x=watermark.padding_pixels, y=watermark.padding_pixels;
+        if(watermark.position==='bottom-right'){x=asset.width-width-x;y=asset.height-height-y;}
+        if(watermark.position==='bottom-left') y=asset.height-height-y;
+        if(watermark.position==='top-right') x=asset.width-width-x;
+        if(watermark.position==='center'){x=(asset.width-width)/2;y=(asset.height-height)/2;}
+        if(watermark.position==='custom'){x=(asset.width-width)*(watermark.offset_x_percent??50)/100;y=(asset.height-height)*(watermark.offset_y_percent??50)/100;}
+        x=Math.round(Math.max(0,Math.min(asset.width-width,x)));y=Math.round(Math.max(0,Math.min(asset.height-height,y)));
+        const transform=`l_${logoId.replaceAll('/',':')}/c_scale,w_${Math.round(width)},o_${Math.round(watermark.opacity*100)}/fl_layer_apply,fl_no_overflow,g_north_west,x_${x},y_${y}`;
+        asset.secure_url = asset.secure_url.replace('/upload/',`/upload/${transform}/`);
+        if(mediaType==='image') {
+          const check=await fetch(asset.secure_url,{method:'HEAD'});
+          if(!check.ok) throw new Error('Watermark rendering failed. Please retry.');
+        }
+      }
+    }
 
     // 2. Generate unique Request Code: BRZ-XXXXX
     const requestCode = `BRZ-${Math.floor(10000 + Math.random() * 90000)}`;
@@ -186,7 +240,7 @@ serve(async (req) => {
         package_name: profile.packages?.name || "Free",
         media_type: mediaType || "image",
         media_count: assets.length,
-        watermark_applied: mediaType === "image" && (pkg?.watermark_required ?? true) && (watermark?.enabled_for_free ?? true),
+        watermark_applied: pkg.watermark_required,
         status: "pending",
         admin_notes: customerNotes || null,
         expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
@@ -218,8 +272,11 @@ serve(async (req) => {
       expires_at: newRequest.expires_at,
     }));
 
-    const { error: assetError } = await supabaseAdmin.from("media_assets").insert(mediaAssetRows);
+    let savedAssets: any[] = [];
+    try {
+    const { data: storedAssets, error: assetError } = await supabaseAdmin.from("media_assets").insert(mediaAssetRows).select('*');
     if (assetError) throw new Error(assetError.message);
+    savedAssets = storedAssets || [];
 
     // 5. Finalize media quota atomically using reservation token and linked request ID
     if (reservationToken) {
@@ -232,6 +289,13 @@ serve(async (req) => {
       }
     }
 
+    } catch (error) {
+      await supabaseAdmin.from('upload_requests').update({status:'failed'}).eq('id',newRequest.id);
+      await supabaseAdmin.rpc('release_media_quota',{p_reservation_token:reservationToken});
+      throw error;
+    }
+    // Return trusted delivery URLs, including server-applied branding.
+    newRequest.assets = savedAssets;
     // 6. Send transactional Resend email alert to administrator
     if (resendApiKey) {
       try {
@@ -264,7 +328,7 @@ serve(async (req) => {
           </div>
         `;
 
-        await fetch("https://api.resend.com/emails", {
+        const emailResponse = await fetch("https://api.resend.com/emails", {
           method: "POST",
           headers: {
             "Authorization": `Bearer ${resendApiKey}`,
@@ -283,7 +347,7 @@ serve(async (req) => {
           request_id: newRequest.id,
           recipient_email: adminEmail,
           subject: emailSubject,
-          status: "sent",
+          status: emailResponse.ok ? "sent" : "failed",
         });
       } catch (err: any) {
         console.error("Resend notification error:", err);

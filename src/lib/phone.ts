@@ -47,6 +47,7 @@ export function normalizePhoneNumber(countryCode: string, localNumber: string): 
  * Validates international phone number length
  */
 export function validatePhoneNumber(fullNumber: string): { isValid: boolean; error?: string } {
+  if (!/^\+[1-9]\d{7,14}$/.test(fullNumber)) return {isValid:false,error:'Enter a valid international WhatsApp number with its country code.'};
   const digitsOnly = fullNumber.replace(/\D/g, '');
   if (digitsOnly.length < 8) {
     return { isValid: false, error: 'Phone number is too short' };

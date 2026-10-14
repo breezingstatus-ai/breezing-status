@@ -35,7 +35,7 @@ export async function uploadToCloudinary(
   resourceType: 'image' | 'video' = 'image',
   fileName: string = 'media_asset',
   onProgress?: (percent: number) => void,
-  reservation?: { token: string; count: number }
+  reservation?: { token: string; count: number; index?: number }
 ): Promise<CloudinaryUploadResult> {
   if (!isCloudinaryConfigured()) {
     throw new Error(
@@ -44,7 +44,7 @@ export async function uploadToCloudinary(
   }
 
   // 1. Direct Unsigned Upload Preset (if configured)
-  if (uploadPreset && !uploadPreset.includes('your-upload-preset')) {
+  if (!isSupabaseConfigured() && uploadPreset && !uploadPreset.includes('your-upload-preset')) {
     const url = `https://api.cloudinary.com/v1_1/${cloudName}/${resourceType}/upload`;
     const formData = new FormData();
     formData.append('file', fileOrBlob, fileName);
@@ -104,7 +104,7 @@ export async function uploadToCloudinary(
       }
       const { data: signData, error: signError } = await supabase.functions.invoke('sign-cloudinary-upload', {
         headers: { Authorization: `Bearer ${session.access_token}` },
-        body: { mediaType: resourceType, count: reservation?.count || 1, reservationToken: reservation?.token },
+        body: { mediaType: resourceType, count: reservation?.count || 1, reservationToken: reservation?.token, assetIndex: reservation?.index ?? 0 },
       });
 
       if (signError) {
@@ -124,6 +124,11 @@ export async function uploadToCloudinary(
         formData.append('timestamp', String(signData.timestamp));
         formData.append('signature', signData.signature);
         formData.append('folder', signData.folder);
+        if (signData.publicId) {
+          formData.append('public_id', signData.publicId);
+          formData.append('overwrite', 'false');
+          formData.append('allowed_formats', signData.allowedFormats);
+        }
 
         return new Promise((resolve, reject) => {
           const xhr = new XMLHttpRequest();
