@@ -6,7 +6,6 @@ import {
   MessageSquare,
   Download,
   Check,
-  Sparkles,
 } from 'lucide-react';
 import { UploadRequest, AppSettings } from '../../types';
 import { downloadContactVCard } from '../../lib/vcard';
@@ -111,7 +110,6 @@ export const CustomerStatusModal: React.FC<CustomerStatusModalProps> = ({
               Preparation Stages
             </span>
             <span className="text-[10px] font-semibold text-[#21A36B] flex items-center gap-1">
-              <Sparkles className="w-3 h-3" />
               <span>HD Engine</span>
             </span>
           </div>

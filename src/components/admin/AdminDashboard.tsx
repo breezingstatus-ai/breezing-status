@@ -11,7 +11,6 @@ import {
   Copy,
   Check,
   RefreshCw,
-  Sparkles,
   Phone,
   X,
   ChevronLeft,
@@ -225,12 +224,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onOpenSettings, 
   };
 
   return (
-    <div className="w-full max-w-4xl mx-auto px-4 py-6 space-y-6 animate-fade-in">
+    <div className="admin-workspace w-full space-y-6">
       {/* Top Banner & Settings Link */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-2 border-b border-[#E4EAE5] dark:border-[#334539]">
+      <div className="workspace-heading flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-xl font-extrabold text-[#19241E] dark:text-[#F2F6F2] flex items-center gap-2">
-            <span>Admin Delivery Console</span>
+          <span className="eyebrow">Breezing workspace</span>
+          <h1 className="text-xl font-extrabold text-[#19241E] dark:text-[#F2F6F2] flex flex-wrap items-center gap-2">
+            <span>Delivery overview</span>
             <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-[#21A36B]/15 text-[#21A36B]">
               Active
             </span>
@@ -279,7 +279,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onOpenSettings, 
       )}
 
       {/* Admin Navigation Tabs */}
-      <div className="flex items-center gap-2 p-1.5 rounded-2xl bg-[#F1F5F1] dark:bg-[#1A241E] border border-[#E4EAE5] dark:border-[#334539] w-fit">
+      <div className="workspace-tabs flex flex-wrap items-center gap-2 p-1.5 rounded-2xl bg-[#F1F5F1] dark:bg-[#1A241E] border border-[#E4EAE5] dark:border-[#334539] w-fit">
         <button
           onClick={() => setAdminTab('requests')}
           className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
@@ -320,7 +320,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onOpenSettings, 
       ) : (
         <>
           {/* Clean Stats Row (PART 13) */}
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+      <div className="workspace-stats grid grid-cols-2 sm:grid-cols-5 gap-3">
         <div className="p-3.5 rounded-2xl bg-white dark:bg-[#1A241E] border border-[#E4EAE5] dark:border-[#334539] shadow-sm">
           <span className="text-[11px] font-medium text-[#748078] dark:text-[#A7B8AC] block">New Requests</span>
           <p className="text-xl font-extrabold text-amber-600 dark:text-amber-400 mt-0.5">{newCount}</p>

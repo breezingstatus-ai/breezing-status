@@ -8,7 +8,6 @@ import {
   Shield, 
   ArrowLeft, 
   Clock, 
-  Sparkles, 
   CheckCircle2, 
   AlertCircle 
 } from 'lucide-react';
@@ -23,6 +22,7 @@ import {
 } from './types';
 import {
   getCurrentUser,
+  getCachedUser,
   getPackages,
   getWatermarkSettings,
   getAppSettings,
@@ -53,7 +53,8 @@ export default function App() {
   });
 
   // User and Permissions
-  const [user, setUser] = useState<UserProfile | null>(null);
+  const [user, setUser] = useState<UserProfile | null>(() => getCachedUser());
+  const [isAuthLoading, setIsAuthLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState<boolean>(false);
   const [isAdminMode, setIsAdminMode] = useState<boolean>(false);
   const [isCustomerPreviewMode, setIsCustomerPreviewMode] = useState<boolean>(false);
@@ -130,6 +131,8 @@ export default function App() {
       }
     } catch (err) {
       console.error('Failed to load application state:', err);
+    } finally {
+      setIsAuthLoading(false);
     }
   }, [isCustomerPreviewMode]);
 
@@ -219,14 +222,14 @@ export default function App() {
   ).length;
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#FAF9F5] dark:bg-[#101713] text-[#19241E] dark:text-[#F2F6F2] font-sans antialiased selection:bg-[#21A36B]/20 transition-colors duration-200">
+    <div className={`app-shell ${isAdminMode && isAdmin ? 'admin-view' : 'customer-view'} min-h-screen flex flex-col text-[#19241E] dark:text-[#F2F6F2] antialiased selection:bg-[#21A36B]/20`}>
       <OfflineIndicator />
 
       {/* Admin Customer Preview Banner (Section 6) */}
       {isAdmin && isCustomerPreviewMode && (
         <aside 
           aria-label="Admin Preview Mode"
-          className="sticky top-0 z-50 bg-[#173B2A] text-white px-4 py-2 text-xs font-semibold flex items-center justify-between shadow-md"
+          className="preview-banner bg-[#173B2A] text-white px-4 py-2 text-xs font-semibold flex flex-wrap items-center justify-between gap-2"
         >
           <div className="flex items-center gap-2">
             <Shield className="w-4 h-4 text-[#58C994]" />
@@ -248,6 +251,7 @@ export default function App() {
       {/* Primary Header Contract (Section 9) */}
       <Header
         user={user}
+        isAuthLoading={isAuthLoading}
         isAdmin={isAdmin}
         isAdminMode={isAdminMode}
         onToggleAdminMode={() => {
@@ -276,7 +280,7 @@ export default function App() {
       />
 
       {/* Main Content Area */}
-      <main className="flex-1 w-full max-w-4xl mx-auto px-4 py-6">
+      <main className="app-main flex-1 w-full mx-auto">
         <ErrorBoundary fallbackTitle="Error loading view">
           {isAdminMode && isAdmin ? (
             isAdminSettingsOpen ? (
@@ -293,6 +297,7 @@ export default function App() {
           ) : (
             <UploadSection
               user={user}
+              isAuthLoading={isAuthLoading}
               currentPackage={activePackage}
               quota={defaultQuota}
               watermarkSettings={defaultWatermark}

@@ -6,7 +6,6 @@ import {
   Mail, 
   Award, 
   Clock, 
-  Sparkles, 
   LogOut, 
   Edit2, 
   Check, 
@@ -273,7 +272,6 @@ export const AccountModal: React.FC<AccountModalProps> = ({
               }}
               className="text-xs font-semibold text-[#21A36B] hover:underline flex items-center gap-1"
             >
-              <Sparkles className="w-3.5 h-3.5" />
               <span>Upgrade Plan</span>
             </button>
           </div>

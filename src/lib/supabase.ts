@@ -206,6 +206,16 @@ initializeLocalState();
 // Authentication Layer
 // ==========================================
 
+// A cached profile is display state only; server checks still authorize every action.
+export function getCachedUser(): UserProfile | null {
+  if (!isSupabaseConfigured()) return getStored<UserProfile | null>(STORAGE_KEYS.USER, null);
+  const projectRef = new URL(supabaseUrl).hostname.split('.')[0];
+  const session = getStored<any>(`sb-${projectRef}-auth-token`, null);
+  const profile = getStored<UserProfile | null>(STORAGE_KEYS.USER, null);
+  if (!session?.user?.id) return null;
+  return profile?.id === session.user.id ? profile : null;
+}
+
 export async function getCurrentUser(): Promise<UserProfile | null> {
   if (isSupabaseConfigured() && supabase) {
     try {
@@ -218,7 +228,11 @@ export async function getCurrentUser(): Promise<UserProfile | null> {
         .eq('id', user.id)
         .single();
 
-      if (profile) return profile as UserProfile;
+      if (profile) {
+        // Do not emit a state-change event here: loadState itself calls this.
+        try { localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(profile)); } catch {}
+        return profile as UserProfile;
+      }
     } catch (err) {
       console.warn('Supabase auth fetch error, falling back to local user', err);
     }

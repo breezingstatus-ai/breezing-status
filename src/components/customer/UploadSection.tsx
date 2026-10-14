@@ -13,7 +13,6 @@ import {
   Check,
   UserPlus,
 } from 'lucide-react';
-import { SubmitMediaIcon } from '../common/CustomIcons';
 import {
   UserProfile,
   SubscriptionPackage,
@@ -31,6 +30,7 @@ import { ProcessingAnimation, ProcessingStage } from './ProcessingAnimation';
 
 interface UploadSectionProps {
   user: UserProfile | null;
+  isAuthLoading?: boolean;
   currentPackage: SubscriptionPackage;
   quota: UsageQuota;
   watermarkSettings: WatermarkSettings;
@@ -51,6 +51,7 @@ interface LocalFileItem {
 
 export const UploadSection: React.FC<UploadSectionProps> = ({
   user,
+  isAuthLoading = false,
   currentPackage,
   quota,
   watermarkSettings,
@@ -323,7 +324,7 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
   };
 
   return (
-    <section className="w-full max-w-md mx-auto px-4 py-8 flex flex-col items-center text-center">
+    <section className="customer-studio">
       {/* 6-Stage HD Media Processing Animation */}
       <ProcessingAnimation
         isOpen={isProcessing}
@@ -335,16 +336,27 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
       />
 
       {/* Hero Title */}
-      <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-[#19241E] dark:text-[#F2F6F2]">
-        Better Quality. Better Status.
+      <div className="customer-intro">
+      <span className="eyebrow"><span className="live-dot" /> Made for your WhatsApp status</span>
+      <h1 className="studio-heading">
+        Your moments.<br /><span>Better quality.</span>
       </h1>
 
-      <p className="mt-2 text-sm text-[#748078] dark:text-[#A7B8AC] max-w-xs leading-relaxed">
-        Upload your pictures. We'll prepare them and send them to your WhatsApp.
+      <p className="studio-description">
+        Give your pictures the finish they deserve. Upload your media, and we’ll prepare it in HD and deliver it to your WhatsApp.
       </p>
+      <div className="studio-art" aria-hidden="true">
+        <div className="art-card art-card-back"><span>everyday, elevated.</span></div>
+        <div className="art-card art-card-front"><div className="art-landscape"><span className="art-sun" /><span className="art-hill art-hill-back" /><span className="art-hill art-hill-front" /></div><div className="art-caption"><span>A little more detail.</span><strong>HD</strong></div></div>
+        <span className="art-note">Ready for your next status</span>
+      </div>
+      <div className="studio-details"><span><strong>HD</strong> Carefully prepared</span><span><strong>24h</strong> Temporary storage</span><span><strong>WhatsApp</strong> Personal delivery</span></div>
+      </div>
+      <div className="upload-panel">
+      <div className="upload-panel-heading"><span className="eyebrow">Start here</span><h2>Prepare your next status</h2><p>Select pictures or a video to get started.</p></div>
 
       {/* Media Type Tabs */}
-      <div className="mt-6 w-full flex items-center p-1 rounded-2xl bg-[#F1F5F1] dark:bg-[#25332A] border border-[#E4EAE5] dark:border-[#334539]">
+      <div className="media-tabs mt-6 w-full flex items-center p-1 rounded-2xl bg-[#F1F5F1] dark:bg-[#25332A] border border-[#E4EAE5] dark:border-[#334539]">
         <button
           onClick={() => {
             setActiveTab('image');
@@ -405,7 +417,7 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
       </div>
 
       {/* Central Upload Card */}
-      <div className="mt-4 w-full rounded-2xl border-2 border-dashed border-[#E4EAE5] dark:border-[#334539] bg-white dark:bg-[#1A241E] p-6 transition-all hover:border-[#21A36B]/60 shadow-sm">
+      <div className="upload-dropzone mt-4 w-full rounded-2xl border-2 border-dashed border-[#E4EAE5] dark:border-[#334539] bg-white dark:bg-[#1A241E] p-6 transition-all hover:border-[#21A36B]/60">
         <input
           ref={fileInputRef}
           type="file"
@@ -422,8 +434,8 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
             htmlFor="media-file-input"
             className="flex flex-col items-center justify-center cursor-pointer py-4"
           >
-            <div className="w-14 h-14 rounded-2xl bg-[#F1F5F1] dark:bg-[#25332A] text-[#173B2A] dark:text-[#58C994] flex items-center justify-center shadow-inner mb-3">
-              <UploadCloud className="w-7 h-7" />
+            <div className="upload-symbol mb-4">
+              <UploadCloud size={24} strokeWidth={1.5} />
             </div>
 
             <span className="font-bold text-sm text-[#19241E] dark:text-[#F2F6F2]">
@@ -496,7 +508,7 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
           disabled={isProcessing}
           className="mt-4 w-full py-3.5 px-4 rounded-xl bg-[#173B2A] dark:bg-[#58C994] text-white dark:text-[#101713] text-sm font-bold shadow-md hover:opacity-95 active:scale-[0.99] transition-all flex items-center justify-center gap-2"
         >
-          <SubmitMediaIcon className="w-4 h-4" />
+          <ArrowRight className="w-4 h-4" />
           <span>{activeTab === 'image' ? 'Submit Pictures' : 'Submit Video'}</span>
         </button>
       )}
@@ -505,9 +517,10 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
       {!user && selectedFiles.length === 0 && (
         <button
           onClick={onOpenAuth}
+          disabled={isAuthLoading}
           className="mt-4 w-full py-3 rounded-xl border border-[#E4EAE5] dark:border-[#334539] bg-white dark:bg-[#1A241E] hover:bg-[#F1F5F1] dark:hover:bg-[#25332A] text-xs font-semibold text-[#19241E] dark:text-[#F2F6F2] shadow-sm transition-all"
         >
-          Continue with Google
+          {isAuthLoading ? 'Restoring your account…' : 'Continue with Google'}
         </button>
       )}
 
@@ -600,6 +613,7 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
           </div>
         </div>
       )}
+      </div>
     </section>
   );
 };

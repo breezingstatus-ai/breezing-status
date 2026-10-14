@@ -3,7 +3,6 @@ import {
   Camera, 
   Video, 
   Check, 
-  Sparkles, 
   ShieldCheck, 
   Sliders, 
   CheckCircle2, 

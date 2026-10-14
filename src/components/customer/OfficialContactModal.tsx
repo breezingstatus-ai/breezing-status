@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Phone, MessageSquare, Download, Check, Copy, ShieldCheck, Sparkles, UserCheck } from 'lucide-react';
+import { X, Phone, MessageSquare, Download, Check, Copy, ShieldCheck, UserCheck } from 'lucide-react';
 import { AppSettings } from '../../types';
 import { downloadContactVCard } from '../../lib/vcard';
 import { getWhatsAppUrl } from '../../lib/phone';

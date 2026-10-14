@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { ShieldCheck, Clock, MessageSquare, X } from 'lucide-react';
+import { PWAInstallButton } from '../pwa/PWAInstallButton';
 
 interface FooterProps {
   onOpenAdmin?: () => void;
@@ -23,6 +24,7 @@ export const Footer: React.FC<FooterProps> = ({ onOpenAdmin }) => {
 
         {/* Quiet Links */}
         <div className="flex flex-wrap items-center justify-center gap-4 text-xs font-medium">
+          <div className="footer-install"><PWAInstallButton /></div>
           <button
             onClick={() => setModalContent('delivery')}
             className="hover:text-[#173B2A] dark:hover:text-[#58C994] transition-colors"

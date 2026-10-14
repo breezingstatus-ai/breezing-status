@@ -146,15 +146,25 @@ serve(async (req) => {
     }
 
     // 1. Get user profile
-    const { data: profile } = await supabaseAdmin
+    const { data: profileRow, error: profileError } = await supabaseAdmin
       .from("profiles")
-      .select("*, packages(*)")
+      .select("*")
       .eq("id", user.id)
-      .single();
+      .maybeSingle();
 
-    if (!profile) {
+    if (profileError) {
+      console.error("Profile lookup failed", profileError.code, profileError.message);
+      return new Response(JSON.stringify({ error: `Profile lookup failed: ${profileError.message}` }), { status: 500, headers: corsHeaders });
+    }
+    if (!profileRow) {
       return new Response(JSON.stringify({ error: "Profile not found" }), { status: 404, headers: corsHeaders });
     }
+    // Fetch the package separately: a missing/ambiguous PostgREST relationship
+    // must not hide a valid customer profile behind a false 404.
+    const { data: pkg, error: packageError } = await supabaseAdmin
+      .from("packages").select("*").eq("id", profileRow.package_id || "free").single();
+    if (packageError) throw new Error(`Package lookup failed: ${packageError.message}`);
+    const profile = { ...profileRow, packages: pkg };
 
     // 2. Generate unique Request Code: BRZ-XXXXX
     const requestCode = `BRZ-${Math.floor(10000 + Math.random() * 90000)}`;

@@ -6,7 +6,6 @@ import {
   Phone,
   Mail,
   Calendar,
-  Sparkles,
   RefreshCw,
   Award,
   CheckCircle,
@@ -149,7 +148,7 @@ export const CustomerManagement: React.FC<CustomerManagementProps> = ({
           </span>
           <div className="mt-1 flex items-baseline gap-2">
             <span className="text-2xl font-extrabold text-[#19241E] dark:text-[#F2F6F2]">
-              {totalCustomers === 0 ? '0 customers' : totalCustomers}
+              {totalCustomers}
             </span>
             <Users className="w-4 h-4 text-[#21A36B]" />
           </div>
@@ -163,7 +162,7 @@ export const CustomerManagement: React.FC<CustomerManagementProps> = ({
             <span className="text-2xl font-extrabold text-[#21A36B]">
               {activeSubscribers}
             </span>
-            <Sparkles className="w-4 h-4 text-[#21A36B]" />
+
           </div>
         </div>
 
@@ -446,7 +445,7 @@ export const CustomerManagement: React.FC<CustomerManagementProps> = ({
                     onClick={() => handleOpenPlanModal(customer)}
                     className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-[#F1F5F1] dark:bg-[#25332A] hover:bg-[#E4EAE5] dark:hover:bg-[#334539] text-[#19241E] dark:text-[#F2F6F2] text-xs font-semibold transition-colors"
                   >
-                    <Sparkles className="w-3 h-3 text-[#21A36B]" />
+
                     <span>Plan</span>
                   </button>
 
