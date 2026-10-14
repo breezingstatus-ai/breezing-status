@@ -232,7 +232,7 @@ export async function signInWithGoogle(): Promise<{ error?: string; user?: UserP
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: window.location.origin,
+        redirectTo: `${window.location.origin}/`,
       },
     });
     if (error) return { error: error.message };
@@ -302,11 +302,10 @@ export async function getAppSettings(): Promise<AppSettings> {
   if (isSupabaseConfigured() && supabase) {
     const { data } = await supabase.from('app_settings').select('*').single();
     let privateSettings: Partial<AppSettings> | null = null;
-    try {
-      const { data: priv } = await supabase.from('admin_private_settings').select('*').single();
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session && await checkIsAdmin(session.user.id)) {
+      const { data: priv } = await supabase.from('admin_private_settings').select('*').maybeSingle();
       if (priv) privateSettings = priv;
-    } catch {
-      // Non-administrators cannot read admin_private_settings; fallback safely
     }
     if (data) {
       return {

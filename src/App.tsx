@@ -142,24 +142,24 @@ export default function App() {
   // Listen to Supabase Auth state changes
   useEffect(() => {
     if (isSupabaseConfigured() && supabase) {
-      const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
-        if (session?.user) {
-          const profile = await getCurrentUser();
-          setUser(profile);
-          const adminCheck = await checkIsAdmin(session.user.id);
-          setIsAdmin(adminCheck);
-          if (adminCheck && !isCustomerPreviewMode) {
-            setIsAdminMode(true);
-          }
-        } else {
+      let reloadTimer: ReturnType<typeof setTimeout> | undefined;
+      const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+        if (!session?.user) {
           setUser(null);
           setIsAdmin(false);
           setIsAdminMode(false);
         }
+        // Auth callbacks run under Supabase's session lock. Defer API calls
+        // until the callback returns so login and token refresh can finish.
+        clearTimeout(reloadTimer);
+        reloadTimer = setTimeout(() => { void loadState(); }, 0);
       });
-      return () => subscription.unsubscribe();
+      return () => {
+        clearTimeout(reloadTimer);
+        subscription.unsubscribe();
+      };
     }
-  }, [isCustomerPreviewMode]);
+  }, [loadState]);
 
   // Active package calculation
   const activePackage =
