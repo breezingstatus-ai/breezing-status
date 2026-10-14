@@ -1,3 +1,4 @@
+import {useStudioScroll} from '../../lib/useStudioScroll';
 import {servicePaused} from '../../lib/serviceStatus';
 import {ServiceNoticeCard} from './ServiceNoticeCard';
 import React, { useState, useRef, useEffect } from 'react';
@@ -77,6 +78,7 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
   const [copiedContact, setCopiedContact] = useState(false);
 
   const blocked=!serviceVerified || servicePaused(appSettings);
+  const studio=useStudioScroll(blocked);
   const blockedRef=useRef(blocked);blockedRef.current=blocked;
   const uploadAbort=useRef<AbortController|null>(null);
   useEffect(()=>{if(blocked) uploadAbort.current?.abort();},[blocked]);
@@ -359,9 +361,9 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
   };
 
   return (
-    <section className="customer-studio">
+    <section ref={studio.section} className="customer-studio">
       {blocked && <ServiceNoticeCard settings={appSettings} checking={!serviceVerified}/>}
-      <div hidden={blocked}>
+      <div ref={studio.stage} className="studio-layout" hidden={blocked}>
       {/* 6-Stage HD Media Processing Animation */}
       <ProcessingAnimation
         isOpen={isProcessing && !blocked}
@@ -373,7 +375,7 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
       />
 
       {/* Hero Title */}
-      <div className="customer-intro">
+      <div ref={studio.intro} className="customer-intro">
       <span className="eyebrow"><span className="live-dot" /> Made for your WhatsApp status</span>
       <h1 className="studio-heading">
         Your moments.<br /><span>Better quality.</span>
@@ -389,7 +391,7 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
       </div>
       <div className="studio-details"><span><strong>HD</strong> Carefully prepared</span><span><strong>24h</strong> Temporary storage</span><span><strong>WhatsApp</strong> Personal delivery</span></div>
       </div>
-      <div className="upload-panel">
+      <div ref={studio.panel} className="upload-panel" onFocusCapture={event=>{if((event.target as HTMLElement).matches(':focus-visible'))studio.finish();}} onClickCapture={studio.finish}>
       <div className="upload-panel-heading"><span className="eyebrow">Start here</span><h2>Prepare your next status</h2><p>Select pictures or a video to get started.</p></div>
 
       {/* Media Type Tabs */}
