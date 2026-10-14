@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react';
 import { 
   Shield, 
   ArrowLeft, 
@@ -41,8 +41,8 @@ import { AuthModal } from './components/customer/AuthModal';
 import { AccountModal } from './components/customer/AccountModal';
 import { UpgradeModal } from './components/customer/UpgradeModal';
 import { CustomerStatusModal } from './components/customer/CustomerStatusModal';
-import { AdminDashboard } from './components/admin/AdminDashboard';
-import { AdminSettings } from './components/admin/AdminSettings';
+const AdminDashboard=lazy(()=>import('./components/admin/AdminDashboard').then(module=>({default:module.AdminDashboard})));
+const AdminSettings=lazy(()=>import('./components/admin/AdminSettings').then(module=>({default:module.AdminSettings})));
 import { OfflineIndicator } from './components/pwa/OfflineIndicator';
 
 export default function App() {
@@ -89,19 +89,36 @@ export default function App() {
     setTheme((prev) => (prev === 'light' ? 'dark' : 'light'));
   };
 
+  const authGeneration=useRef(0);
+  const serviceGeneration=useRef(0);
+  const loading=useRef<Promise<void>|null>(null);
+  const previewMode=useRef(isCustomerPreviewMode); previewMode.current=isCustomerPreviewMode;
+  const connectionHealthy=useRef(false);
+  const [serviceVerified,setServiceVerified]=useState(false);
+  const refreshService=useCallback(async()=>{
+    const generation=serviceGeneration.current;
+    try {const settings=await getAppSettings();if(generation===serviceGeneration.current){setAppSettings(settings);setServiceVerified(true);}}
+    catch {if(generation===serviceGeneration.current)setServiceVerified(false);}
+  },[]);
   // Load core application state
-  const loadState = useCallback(async () => {
+  const loadState = useCallback(():Promise<void> => {
+    if(loading.current) return loading.current;
+    const authVersion=authGeneration.current;
+    const serviceVersion=serviceGeneration.current;
+    const task=(async()=>{
     try {
       const currentUser = await getCurrentUser();
+      if(authVersion!==authGeneration.current)return;
       setUser(currentUser);
 
       // Check admin status on server
       if (currentUser) {
         const adminStatus = await checkIsAdmin(currentUser.id);
+        if(authVersion!==authGeneration.current)return;
         setIsAdmin(adminStatus);
         
         // Auto-redirect approved admin on first login if not explicitly in preview mode
-        if (adminStatus && !isCustomerPreviewMode) {
+        if (adminStatus && !previewMode.current) {
           setIsAdminMode(true);
         }
       } else {
@@ -115,48 +132,69 @@ export default function App() {
         getAppSettings(),
       ]);
 
+      if(authVersion!==authGeneration.current)return;
       setPackages(pkgs);
       setWatermarkSettings(wm);
-      setAppSettings(settings);
+      if(serviceVersion===serviceGeneration.current){setAppSettings(settings);setServiceVerified(true);}
 
       if (currentUser) {
         const [userQuota, userRequests] = await Promise.all([
           getUserQuota(currentUser.id),
           getUploadRequests(currentUser.id),
         ]);
+        if(authVersion!==authGeneration.current)return;
         setQuota(userQuota);
         setRecentRequests(userRequests);
       } else {
         setRecentRequests([]);
       }
     } catch (err) {
+      setServiceVerified(false);
       console.error('Failed to load application state:', err);
     } finally {
       setIsAuthLoading(false);
     }
-  }, [isCustomerPreviewMode]);
+    })(); loading.current=task;
+    void task.finally(()=>{if(loading.current===task) loading.current=null;});
+    return task;
+  }, []);
 
-  useEffect(() => {
-    loadState();
-    const unsubscribe = subscribeToStateUpdates(loadState, user?.id);
-    return () => unsubscribe();
-  }, [loadState, user?.id]);
+  useEffect(()=>{void loadState();},[loadState]);
+  useEffect(()=>subscribeToStateUpdates((table,settings)=>{
+    if(table==='connection') {connectionHealthy.current=!!settings; if(settings) void refreshService(); else setServiceVerified(false); return;}
+    if(table==='app_settings' && settings) {serviceGeneration.current++;setAppSettings(settings);setServiceVerified(true);return;}
+    if(table==='app_settings') {void refreshService();return;}
+    if(table==='packages') {void getPackages().then(setPackages).catch(()=>undefined);return;}
+    if(table==='watermark_settings') {void getWatermarkSettings().then(setWatermarkSettings).catch(()=>undefined);return;}
+    void loadState();
+  },user?.id || ''),[loadState,refreshService,user?.id]);
+  useEffect(()=>{
+    const refresh=()=>{if(document.visibilityState==='visible') void refreshService();};
+    const offline=()=>setServiceVerified(false);
+    window.addEventListener('online',refresh);window.addEventListener('offline',offline);
+    document.addEventListener('visibilitychange',refresh);
+    const timer=setInterval(()=>{if(!connectionHealthy.current) refresh();},30_000);
+    return ()=>{clearInterval(timer);window.removeEventListener('online',refresh);window.removeEventListener('offline',offline);document.removeEventListener('visibilitychange',refresh);};
+  },[refreshService]);
 
   // Listen to Supabase Auth state changes
   useEffect(() => {
     if (isSupabaseConfigured() && supabase) {
       let reloadTimer: ReturnType<typeof setTimeout> | undefined;
-      const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+        if(event!=='INITIAL_SESSION' && event!=='TOKEN_REFRESHED') authGeneration.current++;
         if (!session?.user) {
+          setQuota(null);setRecentRequests([]);setSelectedRequestForStatus(null);
           setUser(null);
           setIsAdmin(false);
           setIsAdminMode(false);
           setIsCustomerPreviewMode(false);
         }
+        if(event==='INITIAL_SESSION' || event==='TOKEN_REFRESHED') return;
         // Auth callbacks run under Supabase's session lock. Defer API calls
         // until the callback returns so login and token refresh can finish.
         clearTimeout(reloadTimer);
-        reloadTimer = setTimeout(() => { void loadState(); }, 0);
+        reloadTimer = setTimeout(() => { const previous=loading.current; if(previous) void previous.then(()=>loadState()); else void loadState(); }, 0);
       });
       return () => {
         clearTimeout(reloadTimer);
@@ -210,7 +248,7 @@ export default function App() {
     delivery_estimate_text: 'Usually ready in 5–10 minutes. Please allow up to 1 hour.',
     delivery_estimate_busy_text: 'High traffic. Delivery may take 20–45 minutes.',
     retention_hours: 24,
-    admin_email: 'breezingstatus@gmail.com',
+    admin_email: '',
     email_alerts_enabled: true,
     official_whatsapp_number: '+265 99 374 1274',
     official_contact_name: 'Breezing Status HD',
@@ -283,6 +321,7 @@ export default function App() {
       {/* Main Content Area */}
       <main className="app-main flex-1 w-full mx-auto">
         <ErrorBoundary fallbackTitle="Error loading view">
+          <Suspense fallback={<p role="status" className="p-8 text-center text-sm opacity-60">Opening your workspace…</p>}>
           {isAdminMode && isAdmin ? (
             isAdminSettingsOpen ? (
               <AdminSettings onBack={() => setIsAdminSettingsOpen(false)} />
@@ -302,6 +341,7 @@ export default function App() {
               currentPackage={activePackage}
               quota={defaultQuota}
               watermarkSettings={defaultWatermark}
+              serviceVerified={serviceVerified}
               appSettings={defaultAppSettings}
               onOpenAuth={() => setIsAuthModalOpen(true)}
               onOpenProfile={() => setIsAccountModalOpen(true)}
@@ -316,6 +356,7 @@ export default function App() {
               }}
             />
           )}
+          </Suspense>
         </ErrorBoundary>
       </main>
 

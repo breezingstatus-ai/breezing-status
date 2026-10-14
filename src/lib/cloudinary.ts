@@ -35,8 +35,9 @@ export async function uploadToCloudinary(
   resourceType: 'image' | 'video' = 'image',
   fileName: string = 'media_asset',
   onProgress?: (percent: number) => void,
-  reservation?: { token: string; count: number; index?: number }
+  reservation?: { token: string; count: number; index?: number; signal?:AbortSignal }
 ): Promise<CloudinaryUploadResult> {
+  reservation?.signal?.throwIfAborted();
   if (!isCloudinaryConfigured()) {
     throw new Error(
       'Cloudinary is not configured. Please define VITE_CLOUDINARY_CLOUD_NAME in your environment.'
@@ -91,6 +92,11 @@ export async function uploadToCloudinary(
       };
 
       xhr.onerror = () => reject(new Error('Network error during Cloudinary upload. Please check your connection.'));
+      const abort=()=>xhr.abort();
+      xhr.onabort=()=>reject(new Error('Upload stopped. Please check the service notice.'));
+      xhr.onloadend=()=>reservation?.signal?.removeEventListener('abort',abort);
+      reservation?.signal?.addEventListener('abort',abort,{once:true});
+      if(reservation?.signal?.aborted) {reject(new Error('Upload stopped.'));return;}
       xhr.send(formData);
     });
   }
@@ -170,6 +176,11 @@ export async function uploadToCloudinary(
           };
 
           xhr.onerror = () => reject(new Error('Network connection error during Cloudinary upload.'));
+          const abort=()=>xhr.abort();
+          xhr.onabort=()=>reject(new Error('Upload stopped. Please check the service notice.'));
+          xhr.onloadend=()=>reservation?.signal?.removeEventListener('abort',abort);
+          reservation?.signal?.addEventListener('abort',abort,{once:true});
+          if(reservation?.signal?.aborted) {reject(new Error('Upload stopped.'));return;}
           xhr.send(formData);
         });
       }

@@ -60,6 +60,10 @@ serve(async (req) => {
 
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
 
+    const {data: service, error: serviceError} = await supabaseAdmin.from("app_settings").select("service_available,maintenance_mode").eq("id",1).single();
+    if (serviceError || !service) return new Response(JSON.stringify({error:"Cannot verify upload availability. Please try again."}),{status:503,headers:corsHeaders});
+    if (!service.service_available || service.maintenance_mode) return new Response(JSON.stringify({error:"Uploads are temporarily paused. Please check the service notice.",code:"SERVICE_PAUSED"}),{status:503,headers:corsHeaders});
+
     // Verify reservation token ownership, active status, expiration, and count match
     const { data: reservation, error: resError } = await supabaseAdmin
       .from("quota_reservations")

@@ -1,4 +1,6 @@
-import React, { useState, useRef } from 'react';
+import {servicePaused} from '../../lib/serviceStatus';
+import {ServiceNoticeCard} from './ServiceNoticeCard';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   UploadCloud,
   Image as ImageIcon,
@@ -24,13 +26,14 @@ import {
 } from '../../types';
 import { processStatusPhotograph, inspectVideoFile } from '../../lib/mediaProcessor';
 import { uploadToCloudinary } from '../../lib/cloudinary';
-import { createUploadRequest, reserveMediaQuota, releaseMediaQuota, getWatermarkSettings, getCurrentUser, getPackages } from '../../lib/supabase';
+import { createUploadRequest, reserveMediaQuota, releaseMediaQuota, getWatermarkSettings, getCurrentUser, getPackages, getAppSettings } from '../../lib/supabase';
 import { downloadContactVCard } from '../../lib/vcard';
 import { ProcessingAnimation, ProcessingStage } from './ProcessingAnimation';
 
 interface UploadSectionProps {
   user: UserProfile | null;
   isAuthLoading?: boolean;
+  serviceVerified?: boolean;
   currentPackage: SubscriptionPackage;
   quota: UsageQuota;
   watermarkSettings: WatermarkSettings;
@@ -53,6 +56,7 @@ interface LocalFileItem {
 export const UploadSection: React.FC<UploadSectionProps> = ({
   user,
   isAuthLoading = false,
+  serviceVerified = true,
   currentPackage,
   quota,
   watermarkSettings,
@@ -72,6 +76,12 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
   const [submittedRequest, setSubmittedRequest] = useState<UploadRequest | null>(null);
   const [copiedContact, setCopiedContact] = useState(false);
 
+  const blocked=!serviceVerified || servicePaused(appSettings);
+  const blockedRef=useRef(blocked);blockedRef.current=blocked;
+  const uploadAbort=useRef<AbortController|null>(null);
+  useEffect(()=>{if(blocked) uploadAbort.current?.abort();},[blocked]);
+  useEffect(()=>()=>uploadAbort.current?.abort(),[]);
+  const assertAvailable=()=>{if(blockedRef.current || uploadAbort.current?.signal.aborted) throw new Error('Uploads are paused. Please check the service notice.');};
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Allowance calculations
@@ -90,6 +100,7 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
   const officialName = appSettings.official_contact_name || 'Breezing Status HD';
 
   const handleFilesSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if(blockedRef.current) return;
     setErrorMessage(null);
     const files = e.target.files;
     if (!files || files.length === 0) return;
@@ -143,6 +154,7 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
       }
     }
 
+    if(blockedRef.current) {newItems.forEach(item=>URL.revokeObjectURL(item.previewUrl));return;}
     setSelectedFiles((prev) => [...prev, ...newItems]);
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
@@ -156,6 +168,8 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
   };
 
   const handleSubmit = async () => {
+    if(blockedRef.current || isProcessing) return;
+    uploadAbort.current=new AbortController();
     if (!user) {
       onOpenAuth();
       return;
@@ -177,13 +191,16 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
     let isQuotaReserved = false;
 
     try {
+      const live=await getAppSettings();
+      if(servicePaused(live)) throw new Error('Uploads are paused. Please check the service notice.');
+      assertAvailable();
       const profile = await getCurrentUser();
       if (profile?.status === 'suspended') throw new Error('Your account is suspended. Contact the administrator.');
       if (!profile || !profile.full_name?.trim() || profile.full_name.trim().length < 2 || profile.full_name.trim().length > 120 || !/^\+[1-9]\d{7,14}$/.test(profile.whatsapp_number || '') || !profile.whatsapp_consent) {
         onOpenProfile();
         throw new Error('Enter your name and valid WhatsApp number, and agree to WhatsApp delivery before uploading.');
       }
-      const latestPackage = (await getPackages()).find(pkg => pkg.id === profile.package_id && pkg.is_active);
+      const latestPackage = (await getPackages(true)).find(pkg => pkg.id === profile.package_id && pkg.is_active);
       if (!latestPackage) throw new Error('Your package is unavailable. Contact the administrator.');
       // Stage 1: Photo Received / Video Received
       setProcessingStage(1);
@@ -206,6 +223,7 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
         if (item.type === 'video') await inspectVideoFile(item.file, latestPackage.max_video_size_mb, latestPackage.max_video_duration_seconds ?? 60);
       }
       // Pre-allocate quota atomically before starting physical media processing & upload
+      assertAvailable();
       await reserveMediaQuota(user.id, selectedFiles.length, activeTab, reservationToken);
       isQuotaReserved = true;
 
@@ -220,6 +238,7 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
       const totalFiles = selectedFiles.length;
 
       for (let i = 0; i < totalFiles; i++) {
+        assertAvailable();
         const item = selectedFiles[i];
 
         if (item.type === 'image') {
@@ -241,7 +260,7 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
               const slice = (1 / totalFiles) * 35 * (pct / 100);
               setProcessingPercent(Math.min(85, Math.round(base + slice)));
             },
-            { token: reservationToken, count: totalFiles, index: i }
+            { token: reservationToken, count: totalFiles, index: i, signal:uploadAbort.current.signal }
           );
 
           uploadedAssets.push({
@@ -273,7 +292,7 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
               const slice = (1 / totalFiles) * 35 * (pct / 100);
               setProcessingPercent(Math.min(85, Math.round(base + slice)));
             },
-            { token: reservationToken, count: totalFiles, index: i }
+            { token: reservationToken, count: totalFiles, index: i, signal:uploadAbort.current.signal }
           );
 
           uploadedAssets.push({
@@ -300,6 +319,7 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
       setProcessingPercent(92);
       await new Promise((r) => setTimeout(r, 400));
 
+      assertAvailable();
       const newRequest = await createUploadRequest(
         user,
         currentPackage,
@@ -316,10 +336,11 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
 
       setSubmittedRequest(newRequest);
       onRequestCreated(newRequest);
+      selectedFiles.forEach(item=>URL.revokeObjectURL(item.previewUrl));
       setSelectedFiles([]);
     } catch (err: any) {
       if (isQuotaReserved) {
-        await releaseMediaQuota(reservationToken);
+        await releaseMediaQuota(reservationToken).catch(()=>undefined);
       }
       setErrorMessage(err.message || 'Failed to submit media. Please try again.');
     } finally {
@@ -339,9 +360,11 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
 
   return (
     <section className="customer-studio">
+      {blocked && <ServiceNoticeCard settings={appSettings} checking={!serviceVerified}/>}
+      <div hidden={blocked}>
       {/* 6-Stage HD Media Processing Animation */}
       <ProcessingAnimation
-        isOpen={isProcessing}
+        isOpen={isProcessing && !blocked}
         mediaType={activeTab}
         currentStage={processingStage}
         progressPercent={processingPercent}
@@ -374,7 +397,8 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
         <button
           onClick={() => {
             setActiveTab('image');
-            setSelectedFiles([]);
+            selectedFiles.forEach(item=>URL.revokeObjectURL(item.previewUrl));
+      setSelectedFiles([]);
           }}
           className={`flex-1 py-2 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all ${
             activeTab === 'image'
@@ -389,7 +413,8 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
         <button
           onClick={() => {
             setActiveTab('video');
-            setSelectedFiles([]);
+            selectedFiles.forEach(item=>URL.revokeObjectURL(item.previewUrl));
+      setSelectedFiles([]);
           }}
           className={`flex-1 py-2 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all ${
             activeTab === 'video'
@@ -440,7 +465,7 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
           onChange={handleFilesSelected}
           className="hidden"
           id="media-file-input"
-          disabled={isProcessing || (activeTab === 'image' ? isPicsExhausted : isVideoExhausted)}
+          disabled={blocked || isProcessing || (activeTab === 'image' ? isPicsExhausted : isVideoExhausted)}
         />
 
         {selectedFiles.length === 0 ? (
@@ -519,7 +544,7 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
       {selectedFiles.length > 0 && (
         <button
           onClick={handleSubmit}
-          disabled={isProcessing}
+          disabled={blocked || isProcessing}
           className="mt-4 w-full py-3.5 px-4 rounded-xl bg-[#173B2A] dark:bg-[#58C994] text-white dark:text-[#101713] text-sm font-bold shadow-md hover:opacity-95 active:scale-[0.99] transition-all flex items-center justify-center gap-2"
         >
           <ArrowRight className="w-4 h-4" />
@@ -627,6 +652,7 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
           </div>
         </div>
       )}
+      </div>
       </div>
     </section>
   );

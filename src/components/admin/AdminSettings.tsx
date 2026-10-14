@@ -1,3 +1,4 @@
+import {ServiceControls} from './ServiceControls';
 import { PackageEditor } from './PackageEditor';
 import { WatermarkPreview } from './WatermarkPreview';
 import { useDialogs } from '../common/Dialogs';
@@ -45,7 +46,7 @@ interface AdminSettingsProps {
 
 export const AdminSettings: React.FC<AdminSettingsProps> = ({ onBack }) => {
   const { confirm, notify } = useDialogs();
-  const [activeTab, setActiveTab] = useState<'official-contact' | 'watermark' | 'limits' | 'packages' | 'payments' | 'storage' | 'email'>('official-contact');
+  const [activeTab, setActiveTab] = useState<'official-contact' | 'watermark' | 'limits' | 'packages' | 'payments' | 'storage' | 'email' | 'service'>('official-contact');
 
   // Official WhatsApp Contact & App Settings
   const [appSettings, setAppSettings] = useState<AppSettings | null>(null);
@@ -224,6 +225,7 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ onBack }) => {
 
       {/* Tabs Navigation (PART 1: Deployment guides removed!) */}
       <div className="flex items-center gap-1.5 p-1 rounded-2xl bg-[#F1F5F1] dark:bg-[#25332A] overflow-x-auto text-xs font-semibold">
+        <button onClick={()=>setActiveTab('service')} className={`px-4 py-2 rounded-xl shrink-0 ${activeTab==='service'?'bg-white dark:bg-[#1A241E] shadow-sm':''}`}>Service availability</button>
         <button
           onClick={() => setActiveTab('official-contact')}
           className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl transition-all shrink-0 ${
@@ -312,6 +314,7 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ onBack }) => {
         </button>
       </div>
 
+      {activeTab==='service' && appSettings && <ServiceControls settings={appSettings} onSaved={setAppSettings}/>}
       {/* 1. Official WhatsApp Contact (PART 6) */}
       {activeTab === 'official-contact' && (
         <div className="p-6 rounded-2xl bg-white dark:bg-[#1A241E] border border-[#E4EAE5] dark:border-[#334539] space-y-5 shadow-sm max-w-lg text-xs">
@@ -595,7 +598,7 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ onBack }) => {
       {activeTab === 'packages' && (
         <div className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            {packages.map(pkg => <PackageEditor key={pkg.id} pkg={pkg} onSaved={loadData} />)}
+            {[...packages].sort((a,b)=>{const rank=(id:string)=>({free:0,premium:1,business:2}[id]??3);return rank(a.id)-rank(b.id);}).map(pkg => <PackageEditor key={pkg.id} pkg={pkg} onSaved={loadData} />)}
           </div>
         </div>
       )}

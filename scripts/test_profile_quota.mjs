@@ -52,7 +52,7 @@ assert.equal((await api.getWatermarkSettings()).logo_url,'/watermark-logo.svg');
 await api.updateWatermarkSettings({id:1,enabled_for_free:false});
 rejectWatermarkSave=true;
 await assert.rejects(()=>api.updateWatermarkSettings({id:1,enabled_for_free:true}),/Watermark save rejected/);
-assert.equal(JSON.parse(storage.get('breezing_watermark')).enabled_for_free,false,'A failed save must not enable the logo locally');
+assert.equal(storage.has('breezing_watermark'),false,'Production must not persist custom watermark media in localStorage');
 storage.set('breezing_current_user',JSON.stringify({...profile,role:'admin'}));
 assert.equal(await api.checkIsAdmin(),false,'Production admin access must fail closed when the server check fails');
 await api.updatePackage({...packageRule,price:1250});

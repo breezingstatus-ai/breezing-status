@@ -1,3 +1,4 @@
+import { cachedMetadata, invalidateMetadata } from './metadataCache';
 // Supabase Client and Unified Data Layer
 // Connects to live Supabase Auth, PostgreSQL, Realtime & Edge Functions when configured,
 // and provides a fully interactive local state fallback with diagnostics when awaiting deployment keys.
@@ -96,7 +97,7 @@ const DEFAULT_APP_SETTINGS: AppSettings = {
   delivery_estimate_text: 'Usually ready in 5–10 minutes. Please allow up to 1 hour.',
   delivery_estimate_busy_text: 'High traffic. Delivery may take 20–45 minutes.',
   retention_hours: 24,
-  admin_email: 'breezingstatus@gmail.com',
+  admin_email: '',
   email_alerts_enabled: true,
   official_whatsapp_number: '+265 99 374 1274',
   official_contact_name: 'Breezing Status HD',
@@ -121,22 +122,29 @@ const STORAGE_KEYS = {
 };
 
 // Listeners for realtime reactive UI
-type Listener = () => void;
+type Listener = (table?: string, settings?: AppSettings) => void;
 const listeners = new Set<Listener>();
+let channelUserId: string | undefined;
 let stateChannel: ReturnType<NonNullable<typeof supabase>['channel']> | null = null;
 
 export function subscribeToStateUpdates(listener: Listener, userId?: string): () => void {
   listeners.add(listener);
+  if(supabase && stateChannel && userId!==undefined && channelUserId!==userId) {void supabase.removeChannel(stateChannel);stateChannel=null;}
   if (supabase && !stateChannel) {
+    channelUserId=userId;
     stateChannel = supabase.channel(`app-state-${crypto.randomUUID()}`);
     for (const table of ['packages','watermark_settings','app_settings']) {
-      stateChannel.on('postgres_changes', {event:'*', schema:'public', table}, notifyStateChange);
+      stateChannel.on('postgres_changes', {event:'*', schema:'public', table}, payload => {
+        if(table==='packages') invalidateMetadata('packages');
+        if(table==='watermark_settings') invalidateMetadata('watermark');
+        notifyStateChange(table, table==='app_settings' && payload.eventType!=='DELETE' ? payload.new as AppSettings : undefined);
+      });
     }
     if (userId) {
-      stateChannel.on('postgres_changes', {event:'*',schema:'public',table:'profiles',filter:`id=eq.${userId}`}, notifyStateChange);
-      stateChannel.on('postgres_changes', {event:'*',schema:'public',table:'usage_quotas',filter:`user_id=eq.${userId}`}, notifyStateChange);
+      stateChannel.on('postgres_changes', {event:'*',schema:'public',table:'profiles',filter:`id=eq.${userId}`}, ()=>notifyStateChange('profiles'));
+      stateChannel.on('postgres_changes', {event:'*',schema:'public',table:'usage_quotas',filter:`user_id=eq.${userId}`}, ()=>notifyStateChange('usage_quotas'));
     }
-    stateChannel.subscribe();
+    stateChannel.subscribe(status=>notifyStateChange('connection',status==='SUBSCRIBED'?{} as AppSettings:undefined));
   }
   return () => {
     listeners.delete(listener);
@@ -144,10 +152,10 @@ export function subscribeToStateUpdates(listener: Listener, userId?: string): ()
   };
 }
 
-function notifyStateChange() {
+function notifyStateChange(table?: string, settings?: AppSettings) {
   listeners.forEach((fn) => {
     try {
-      fn();
+      fn(table, settings);
     } catch (e) {
       console.error(e);
     }
@@ -167,7 +175,11 @@ function getStored<T>(key: string, defaultValue: T): T {
 
 function setStored<T>(key: string, value: T): void {
   try {
-    localStorage.setItem(key, JSON.stringify(value));
+    const privateKeys=[STORAGE_KEYS.REQUESTS,STORAGE_KEYS.PAYMENTS,STORAGE_KEYS.CUSTOMERS,STORAGE_KEYS.QUOTAS,STORAGE_KEYS.APP_SETTINGS];
+    if (isSupabaseConfigured() && privateKeys.includes(key)) { notifyStateChange(); return; }
+    const json=JSON.stringify(value);
+    if(new TextEncoder().encode(json).length > 16384 || /data:|blob:/i.test(json)) { localStorage.removeItem(key); notifyStateChange(); return; }
+    localStorage.setItem(key,json);
     notifyStateChange();
   } catch (e) {
     console.error('Storage write error', e);
@@ -235,19 +247,24 @@ export async function getCurrentUser(): Promise<UserProfile | null> {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return null;
 
-      const { data: profile } = await supabase
+      const { data: profile, error: profileError } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', user.id)
         .single();
 
+      if(profileError) throw new Error(profileError.message);
       if (profile) {
         // Do not emit a state-change event here: loadState itself calls this.
-        try { localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(profile)); } catch {}
+        try {
+          const display={...profile,avatar_url:profile.avatar_url?.startsWith('data:')?null:profile.avatar_url,avatar_thumbnail_url:profile.avatar_thumbnail_url?.startsWith('data:')?null:profile.avatar_thumbnail_url};
+          const json=JSON.stringify(display); if(json.length<16384) localStorage.setItem(STORAGE_KEYS.USER,json);
+        } catch {}
         return profile as UserProfile;
       }
+      return null;
     } catch (err) {
-      console.warn('Supabase auth fetch error, falling back to local user', err);
+      throw err;
     }
   }
 
@@ -303,13 +320,15 @@ export async function saveUserProfile(profile: UserProfile): Promise<void> {
 // Packages & Watermark
 // ==========================================
 
-export async function getPackages(): Promise<SubscriptionPackage[]> {
+export async function getPackages(force=false): Promise<SubscriptionPackage[]> {
+  return cachedMetadata('packages', async () => {
   if (isSupabaseConfigured() && supabase) {
     const { data, error } = await supabase.from('packages').select('*').order('price', { ascending: true });
     if (error) throw new Error(error.message);
     if (data && data.length > 0) return data;
   }
   return getStored<SubscriptionPackage[]>(STORAGE_KEYS.PACKAGES, DEFAULT_PACKAGES);
+  }, force);
 }
 
 export async function updatePackage(pkg: SubscriptionPackage): Promise<void> {
@@ -319,18 +338,21 @@ export async function updatePackage(pkg: SubscriptionPackage): Promise<void> {
     const { error } = await supabase.from('packages').upsert(pkg);
     if (error) throw new Error(error.message);
   }
-  const current = await getPackages();
+  invalidateMetadata('packages');
+  const current = await getPackages(true);
   const updated = current.map((p) => (p.id === pkg.id ? pkg : p));
   setStored(STORAGE_KEYS.PACKAGES, updated);
 }
 
 export async function getWatermarkSettings(): Promise<WatermarkSettings> {
+  return cachedMetadata('watermark', async () => {
   if (isSupabaseConfigured() && supabase) {
     const { data, error } = await supabase.from('watermark_settings').select('*').single();
     if (error) throw new Error(error.message);
     if (data) return { ...data, logo_url: data.logo_url === '/watermark-logo.png' ? '/watermark-logo.svg' : data.logo_url };
   }
   return getStored<WatermarkSettings>(STORAGE_KEYS.WATERMARK, DEFAULT_WATERMARK);
+  });
 }
 
 export async function updateWatermarkSettings(settings: WatermarkSettings): Promise<void> {
@@ -338,44 +360,44 @@ export async function updateWatermarkSettings(settings: WatermarkSettings): Prom
     const { error } = await supabase.from('watermark_settings').upsert({ ...settings, id: 1 });
     if (error) throw new Error(error.message);
   }
-  setStored(STORAGE_KEYS.WATERMARK, settings);
+  invalidateMetadata('watermark');
+  if (!isSupabaseConfigured()) setStored(STORAGE_KEYS.WATERMARK, settings);
+  else notifyStateChange('watermark_settings');
 }
 
 // ==========================================
 // App Settings
 // ==========================================
 
-export async function getAppSettings(): Promise<AppSettings> {
-  if (isSupabaseConfigured() && supabase) {
-    const { data } = await supabase.from('app_settings').select('*').single();
-    let privateSettings: Partial<AppSettings> | null = null;
-    const { data: { session } } = await supabase.auth.getSession();
-    if (session && await checkIsAdmin(session.user.id)) {
-      const { data: priv } = await supabase.from('admin_private_settings').select('*').maybeSingle();
-      if (priv) privateSettings = priv;
+let settingsRequest: Promise<AppSettings> | null = null;
+export function getAppSettings(): Promise<AppSettings> {
+  // Availability is always fetched fresh; concurrent readers share one request.
+  if (settingsRequest) return settingsRequest;
+  settingsRequest = (async () => {
+    if (isSupabaseConfigured() && supabase) {
+      const {data,error}=await supabase.from('app_settings').select('*').single();
+      if(error || !data) throw new Error('Cannot verify service availability. Please reconnect.');
+      return {...DEFAULT_APP_SETTINGS,admin_email:'',email_alerts_enabled:false,...data} as AppSettings;
     }
-    if (data) {
-      return {
-        ...DEFAULT_APP_SETTINGS,
-        ...data,
-        ...(privateSettings || {}),
-      };
-    }
-  }
-  const stored = getStored<AppSettings>(STORAGE_KEYS.APP_SETTINGS, DEFAULT_APP_SETTINGS);
-  return {
-    ...DEFAULT_APP_SETTINGS,
-    ...stored,
-  };
+    const stored=getStored<AppSettings>(STORAGE_KEYS.APP_SETTINGS,DEFAULT_APP_SETTINGS);
+    return {...stored,admin_email:'',email_alerts_enabled:false};
+  })();
+  const request=settingsRequest;
+  void request.then(()=>{if(settingsRequest===request)settingsRequest=null;},()=>{if(settingsRequest===request)settingsRequest=null;});
+  return request;
 }
-
+export async function updateServiceStatus(paused:boolean, key:string, notices:import('../types').ServiceNotice[]) {
+  if(!supabase) throw new Error('Service controls require a connected backend.');
+  const {data,error}=await supabase.rpc('set_service_status',{p_paused:paused,p_notice_key:key,p_notices:notices});
+  if(error || !data?.success) throw new Error(error?.message || 'Could not update service status.');
+  settingsRequest=null;
+  const settings=await getAppSettings(); notifyStateChange('app_settings',settings); return settings;
+}
 export async function updateAppSettings(settings: AppSettings): Promise<void> {
   if (isSupabaseConfigured() && supabase) {
-    const publicSettings = {
-      id: 1,
+    // Contact edits must never overwrite a concurrent pause or notice edit.
+    const {error}=await supabase.from('app_settings').update({
       app_name: settings.app_name,
-      service_available: settings.service_available,
-      maintenance_mode: settings.maintenance_mode,
       delivery_estimate_text: settings.delivery_estimate_text,
       delivery_estimate_busy_text: settings.delivery_estimate_busy_text,
       retention_hours: settings.retention_hours,
@@ -383,22 +405,12 @@ export async function updateAppSettings(settings: AppSettings): Promise<void> {
       official_contact_name: settings.official_contact_name,
       official_country_code: settings.official_country_code,
       payment_demo_mode: settings.payment_demo_mode,
-    };
-    await supabase.from('app_settings').upsert(publicSettings);
-
-    if (settings.admin_email !== undefined || settings.email_alerts_enabled !== undefined) {
-      try {
-        await supabase.from('admin_private_settings').upsert({
-          id: 1,
-          admin_email: settings.admin_email || 'breezingstatus@gmail.com',
-          email_alerts_enabled: settings.email_alerts_enabled ?? true,
-        });
-      } catch (err) {
-        console.warn('Could not update admin private settings:', err);
-      }
-    }
+    }).eq('id',1);
+    if(error) throw new Error(error.message);
+    notifyStateChange('app_settings',await getAppSettings());
+    return;
   }
-  setStored(STORAGE_KEYS.APP_SETTINGS, settings);
+  setStored(STORAGE_KEYS.APP_SETTINGS,{...settings,admin_email:'',email_alerts_enabled:false});
 }
 
 // ==========================================
@@ -1018,3 +1030,5 @@ export async function getFailedDeletionAssets(): Promise<any[]> {
   return [];
 }
 
+
+if (isSupabaseConfigured()) { for(const key of [STORAGE_KEYS.APP_SETTINGS,STORAGE_KEYS.REQUESTS,STORAGE_KEYS.CUSTOMERS,STORAGE_KEYS.PAYMENTS,STORAGE_KEYS.QUOTAS,STORAGE_KEYS.WATERMARK]) { try { localStorage.removeItem(key); } catch {} } }

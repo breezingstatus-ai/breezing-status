@@ -5,11 +5,13 @@ const source=(await readFile(new URL('../supabase/functions/finalize-request/ind
 const {code}=await transform(source,{loader:'ts',format:'cjs'});
 const env={SUPABASE_URL:'https://test.invalid',SUPABASE_PUBLISHABLE_KEYS:'{"default":"test-public"}',SUPABASE_SECRET_KEYS:'{"default":"test-secret"}',CLOUDINARY_CLOUD_NAME:'test-cloud',CLOUDINARY_API_KEY:'test-key',CLOUDINARY_API_SECRET:'test-secret'};
 let handler, insertedRequest, insertedAssets, profileError=null, missingProfile=false, insertError=null;
+let servicePaused=false;
 let watermarkRequired=true, mediaType='image', bytes=1000, duration=5, contact=true;
 const selections=[];
 const publicId='breezing_hd_status/test-user/test-batch/0';
 const createClient=()=>({auth:{getUser:async token=>({data:{user:token==='fake-test-token'?{id:'test-user'}:null},error:null})},from(table){
  const chain={select(fields){selections.push({table,fields});return chain;},eq(){return chain;},update(){return chain;},insert(value){if(table==='upload_requests')insertedRequest=value;if(table==='media_assets')insertedAssets=value;return chain;},single:async()=>chain.result(),maybeSingle:async()=>chain.result(),result(){
+  if(table==='app_settings') return {data:{service_available:!servicePaused,maintenance_mode:servicePaused},error:null};
   if(table==='quota_reservations')return {data:{user_id:'test-user',status:'active',count:1,media_type:mediaType,expires_at:new Date(Date.now()+3600000).toISOString()},error:null};
   if(table==='profiles')return {data:missingProfile?null:{id:'test-user',package_id:'free',full_name:'Test Customer',status:'active',whatsapp_number:contact?'+265991234567':'',whatsapp_consent:true},error:profileError};
   if(table==='packages')return {data:{name:'Free',watermark_required:watermarkRequired,is_active:true,max_video_size_mb:1,max_video_duration_seconds:10},error:null};
@@ -24,6 +26,7 @@ const fakeFetch=async(url,options={})=>{
 };
 new Function('serve','createClient','Deno','fetch',code)(fn=>{handler=fn;},createClient,{env:{get:name=>env[name]}},fakeFetch);
 const request=(id=publicId)=>new Request('https://test.invalid',{method:'POST',headers:{Authorization:'Bearer fake-test-token','Content-Type':'application/json'},body:JSON.stringify({reservationToken:'test-batch',mediaType,assets:[{public_id:id,secure_url:'https://example.invalid/clean.jpg',bytes:1,duration:1}]})});
+servicePaused=true;assert.equal((await handler(request())).status,503);assert.equal(insertedRequest,undefined,'Paused requests must not touch providers or insert requests');servicePaused=false;
 const first = await handler(request());
 assert.equal(first.status,200);
 assert.match((await first.json()).request.assets[0].secure_url,/l_breezing_brand:/,'Return trusted branded URLs to the browser');

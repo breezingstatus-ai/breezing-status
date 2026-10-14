@@ -10,7 +10,7 @@ CREATE FUNCTION auth.role() RETURNS text LANGUAGE sql STABLE AS $$SELECT current
 CREATE FUNCTION auth.jwt() RETURNS jsonb LANGUAGE sql STABLE AS $$SELECT '{}'::jsonb$$;
 CREATE FUNCTION uuid_generate_v4() RETURNS uuid LANGUAGE sql AS $$SELECT gen_random_uuid()$$;
 SET request.jwt.claim.role='service_role';`);
-for(const name of ['01_initial_schema','02_functions_and_triggers','03_row_level_security','04_default_data_and_realtime','06_admin_email_access','07_upload_rules_and_admin_controls']){
+for(const name of ['01_initial_schema','02_functions_and_triggers','03_row_level_security','04_default_data_and_realtime','06_admin_email_access','07_upload_rules_and_admin_controls','08_service_pause']){
  const sql=(await readFile(new URL(`../supabase/setup/${name}.sql`,import.meta.url),'utf8')).replace(/CREATE EXTENSION IF NOT EXISTS\s+[^;]+;/gi,'');
  await db.exec(sql);
 }
@@ -23,6 +23,12 @@ assert.equal((await reserve('no-contact')).success,false);
 await session('', 'service_role');
 await db.query("UPDATE profiles SET full_name='Test Customer',whatsapp_number='+265991234567',whatsapp_consent=true WHERE id=$1",[user]);
 await db.exec("UPDATE packages SET monthly_pictures=3,monthly_videos=1,max_video_size_mb=1,max_video_duration_seconds=10,watermark_required=false WHERE id='free'");
+const notices=(await db.query('SELECT service_notices FROM app_settings WHERE id=1')).rows[0].service_notices;
+await session(user);
+await assert.rejects(()=>db.query('SELECT set_service_status(true,$1,$2)', ['maintenance',JSON.stringify(notices)]),/Administrator/);
+await session(admin);await db.query('SELECT set_service_status(true,$1,$2)', ['maintenance',JSON.stringify(notices)]);
+await session(user);assert.equal((await reserve('paused-early')).code,'SERVICE_PAUSED');
+await session(admin);await db.query('SELECT set_service_status(false,$1,$2)', ['maintenance',JSON.stringify(notices)]);
 await session(user);
 assert.equal((await reserve('three',3)).success,true);
 assert.equal((await reserve('over-pictures')).success,false);
@@ -48,7 +54,11 @@ assert.equal((await finalize()).success,false,'Lowered limits must reject outsta
 await db.exec("UPDATE packages SET monthly_videos=1,watermark_required=true WHERE id='free'");
 assert.equal((await finalize()).success,false,'Watermark rule changes must invalidate an outdated submission');
 await db.exec("UPDATE packages SET watermark_required=false WHERE id='free'");
-assert.equal((await finalize()).success,true);
+await session(admin);await db.query('SELECT set_service_status(true,$1,$2)', ['incident',JSON.stringify(notices)]);
+await session('', 'service_role');assert.equal((await finalize()).code,'SERVICE_PAUSED','Pause rejects uploads already reserved and verified');
+assert.equal((await db.query("SELECT status FROM quota_reservations WHERE reservation_token='video-check'")).rows[0].status,'active');
+await session(admin);await db.query('SELECT set_service_status(false,$1,$2)', ['incident',JSON.stringify(notices)]);
+await session('', 'service_role');assert.equal((await finalize()).success,true);
 await session(user);assert.equal((await reserve('used-up',1,'video')).success,false);
 await session(admin);await db.exec("UPDATE packages SET price=1250 WHERE id='premium'");
 await session(user);

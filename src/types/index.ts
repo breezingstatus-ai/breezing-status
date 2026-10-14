@@ -97,7 +97,11 @@ export interface WatermarkSettings {
   updated_at?: string;
 }
 
+export interface ServiceNotice { key: string; title: string; message: string; }
+
 export interface AppSettings {
+  service_notice_key?: string;
+  service_notices?: ServiceNotice[];
   id: number;
   app_name: string;
   service_available: boolean;
