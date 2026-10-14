@@ -38,6 +38,7 @@ import { Footer } from './components/common/Footer';
 import { ErrorBoundary } from './components/common/ErrorBoundary';
 import { UploadSection } from './components/customer/UploadSection';
 import { AuthModal } from './components/customer/AuthModal';
+import {AdminAccountModal} from './components/admin/AdminAccountModal';
 import { AccountModal } from './components/customer/AccountModal';
 import { UpgradeModal } from './components/customer/UpgradeModal';
 import { CustomerStatusModal } from './components/customer/CustomerStatusModal';
@@ -274,16 +275,7 @@ export default function App() {
             <Shield className="w-4 h-4 text-[#58C994]" />
             <span>Administrator Customer Preview Active</span>
           </div>
-          <button
-            onClick={() => {
-              setIsCustomerPreviewMode(false);
-              setIsAdminMode(true);
-            }}
-            className="flex items-center gap-1.5 px-3 py-1 rounded-md bg-[#58C994] text-[#101713] font-bold text-xs hover:bg-[#48b482] transition-colors"
-          >
-            <ArrowLeft className="w-3.5 h-3.5" />
-            <span>Back to Admin</span>
-          </button>
+
         </aside>
       )}
 
@@ -375,7 +367,8 @@ export default function App() {
         }}
       />
 
-      {user && (
+      {user && isAdmin && <AdminAccountModal isOpen={isAccountModalOpen} user={user} onClose={()=>setIsAccountModalOpen(false)} theme={theme} onToggleTheme={toggleTheme} onSettings={()=>{setIsAccountModalOpen(false);setIsCustomerPreviewMode(false);setIsAdminMode(true);setIsAdminSettingsOpen(true);}} onSignedOut={()=>{setUser(null);setIsAdmin(false);setIsAdminMode(false);setIsAccountModalOpen(false);}}/>}
+      {user && !isAdmin && (
         <AccountModal
           isOpen={isAccountModalOpen}
           onClose={() => setIsAccountModalOpen(false)}

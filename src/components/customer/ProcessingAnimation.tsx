@@ -30,7 +30,7 @@ const STAGES: StageInfo[] = [
   {
     stage: 1,
     label: (m) => (m === 'image' ? 'Photo Received' : 'Video Received'),
-    subtext: 'Input read and buffered safely into memory',
+    subtext: 'Your media is ready to prepare',
   },
   {
     stage: 2,
@@ -50,12 +50,12 @@ const STAGES: StageInfo[] = [
   {
     stage: 5,
     label: () => 'Final Quality Check',
-    subtext: 'Verifying Cloudinary storage and integrity token',
+    subtext: 'Checking your prepared media',
   },
   {
     stage: 6,
     label: () => 'Your Media Is Ready',
-    subtext: 'Submitted for priority delivery queue',
+    subtext: 'Waiting for WhatsApp delivery',
   },
 ];
 

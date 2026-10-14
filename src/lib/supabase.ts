@@ -290,7 +290,8 @@ export async function signInWithGoogle(): Promise<{ error?: string; user?: UserP
 
 export async function signOut(): Promise<void> {
   if (isSupabaseConfigured() && supabase) {
-    await supabase.auth.signOut();
+    const {error}=await supabase.auth.signOut();
+    if(error) throw new Error(error.message);
   }
   setStored<UserProfile | null>(STORAGE_KEYS.USER, null);
 }
@@ -674,8 +675,11 @@ export async function updateRequestStatus(
 
 export async function deleteUploadRequest(requestId: string): Promise<void> {
   if (isSupabaseConfigured() && supabase) {
-    const {error} = await supabase.from('upload_requests').delete().eq('id', requestId);
-    if(error) throw new Error(error.message);
+    const {data:{session}}=await supabase.auth.getSession();
+    if(!session) throw new Error('Sign in again before deleting requests.');
+    const {data,error}=await supabase.functions.invoke('delete-request',{headers:{Authorization:`Bearer ${session.access_token}`},body:{requestId}});
+    if(error){const body=error.context instanceof Response?await error.context.json().catch(()=>null):null;throw new Error(body?.error||error.message);}
+    if(!data?.success)throw new Error(data?.error||'Request deletion failed');
   }
   const requests = getStored<UploadRequest[]>(STORAGE_KEYS.REQUESTS, []);
   const filtered = requests.filter((r) => r.id !== requestId);
@@ -829,7 +833,8 @@ export async function deleteCustomerAccount(userId: string): Promise<{ success: 
       if (fnError) {
         throw new Error(fnError.message || 'Failed to delete customer account via secure Edge Function.');
       }
-      await supabase.auth.signOut();
+      const {error}=await supabase.auth.signOut();
+    if(error) throw new Error(error.message);
     } catch (err: any) {
       console.error('Failed to delete user account on Supabase:', err);
       throw new Error(err.message || 'Failed to delete customer account.');

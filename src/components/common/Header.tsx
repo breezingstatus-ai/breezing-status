@@ -26,10 +26,10 @@ export const Header: React.FC<HeaderProps> = ({ user, isAuthLoading, isAdmin, is
       <nav className="header-actions" aria-label="Account navigation">
         <span className="header-install"><PWAInstallButton /></span>
         {isAdmin && <button onClick={onToggleAdminMode} className="header-mode">{isAdminMode ? 'Customer view' : 'Admin'}</button>}
-        <button onClick={onOpenRequests} className="header-requests" aria-label="My Requests" title="My Requests">
+        {!isAdminMode && <button onClick={onOpenRequests} className="header-requests" aria-label="My Requests" title="My Requests">
           <ClipboardList size={18} strokeWidth={1.6} /><span>Requests</span>
           {pendingRequestsCount > 0 && <span className="request-dot" />}
-        </button>
+        </button>}
         {user ? (
           <button onClick={onOpenSettings} className="profile-button" aria-label="Open Settings" title={`Account: ${user.full_name}`}>
             {user.avatar_url ? <img src={user.avatar_url} alt="" /> : <span className="profile-initial">{user.full_name?.charAt(0).toUpperCase() || 'B'}</span>}

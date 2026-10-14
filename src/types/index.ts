@@ -54,6 +54,7 @@ export interface MediaAsset {
   cloudinary_asset_id?: string;
   resource_type: MediaType;
   secure_url: string;
+  thumbnail_url?: string;
   original_filename: string;
   file_size_bytes: number;
   width?: number;

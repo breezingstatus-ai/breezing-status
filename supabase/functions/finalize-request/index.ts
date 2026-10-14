@@ -22,7 +22,7 @@ serve(async (req) => {
     const resendApiKey = Deno.env.get("RESEND_API_KEY") ?? "";
     const adminEmail = Deno.env.get("ADMIN_NOTIFICATION_EMAIL") ?? "breezingstatus@gmail.com";
     const fromEmail = Deno.env.get("RESEND_FROM_EMAIL") ?? "notifications@breezing.com";
-    const appUrl = Deno.env.get("APP_URL") ?? "https://breezing-status-hd.breezingstatus.workers.dev";
+    const appUrl = Deno.env.get("APP_URL") ?? "https://breezing.breezingstatus.workers.dev";
     const cloudinaryApiKey = Deno.env.get("CLOUDINARY_API_KEY") ?? "";
     const cloudinaryApiSecret = Deno.env.get("CLOUDINARY_API_SECRET") ?? "";
     const cloudinaryCloudName = Deno.env.get("CLOUDINARY_CLOUD_NAME") ?? "";
@@ -188,7 +188,7 @@ serve(async (req) => {
     }
     // Apply branding to trusted delivery URLs on the server. Browser flags cannot remove it.
     if (pkg.watermark_required) {
-      const appUrl = Deno.env.get('APP_URL') || 'https://breezing-status-hd.breezingstatus.workers.dev';
+      const appUrl = Deno.env.get('APP_URL') || 'https://breezing.breezingstatus.workers.dev';
       const logoSource = watermark.logo_url.startsWith('data:image/png;base64,') ? watermark.logo_url : new URL(watermark.logo_url, appUrl).href;
       if (!logoSource.startsWith('data:image/png;base64,') && new URL(logoSource).origin !== new URL(appUrl).origin) throw new Error('Use the official logo or upload a PNG in watermark settings');
       const hash = async (value: string, algorithm = 'SHA-1') => Array.from(new Uint8Array(await crypto.subtle.digest(algorithm,new TextEncoder().encode(value)))).map(x=>x.toString(16).padStart(2,'0')).join('');
@@ -260,6 +260,13 @@ serve(async (req) => {
     }
 
     // 4. Insert media assets
+    const thumbnailUrl=(asset:any)=>{
+      const transform=mediaType==='video'?'so_0,c_fill,w_160,h_160,q_35,f_jpg':'c_fill,w_160,h_160,q_35,f_auto';
+      const version=asset.secure_url.match(/\/v\d+\//);
+      let url=version?asset.secure_url.replace(version[0],`/${transform}${version[0]}`):asset.secure_url.replace('/upload/',`/upload/${transform}/`);
+      if(mediaType==='video')url=url.replace(/\.[a-z0-9]+(?:\?.*)?$/i,'.jpg');
+      return url;
+    };
     const mediaAssetRows = assets.map((asset: any) => ({
       request_id: newRequest.id,
       user_id: user.id,
@@ -267,6 +274,7 @@ serve(async (req) => {
       cloudinary_asset_id: asset.asset_id || null,
       resource_type: mediaType || "image",
       secure_url: asset.secure_url,
+      thumbnail_url: thumbnailUrl(asset),
       original_filename: asset.original_filename || "status_media",
       file_size_bytes: asset.bytes || 0,
       width: asset.width || null,

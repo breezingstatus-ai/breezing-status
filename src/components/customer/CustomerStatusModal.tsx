@@ -98,11 +98,12 @@ export const CustomerStatusModal: React.FC<CustomerStatusModalProps> = ({
             <p className="mt-1 text-xs text-[#748078] dark:text-[#A7B8AC] leading-relaxed">
               {isSent
                 ? `Your HD media has been sent! Check your WhatsApp chat at ${request.customer_phone} to view and post.`
-                : 'Sharpening, watermarking, optimization, and verification are complete. Awaiting administrator delivery to your WhatsApp chat.'}
+                : 'Sharpening, watermarking, optimization, and verification are complete. Your media is waiting for delivery to your WhatsApp number.'}
             </p>
           </div>
         </div>
 
+        <p className="text-sm leading-relaxed">Save our WhatsApp number to your contacts to receive your prepared pictures and videos.</p>
         {/* Preparation Stages — Completed & Awaiting Delivery */}
         <div className="p-3.5 rounded-2xl bg-[#F8F9F7] dark:bg-[#101713] border border-[#E4EAE5] dark:border-[#334539] space-y-2 text-xs">
           <div className="flex items-center justify-between">
@@ -159,7 +160,7 @@ export const CustomerStatusModal: React.FC<CustomerStatusModalProps> = ({
                     : 'font-semibold text-[#19241E] dark:text-[#F2F6F2]'
                 }
               >
-                {isSent ? 'Delivered via WhatsApp' : 'Awaiting Administrator Delivery'}
+                {isSent ? 'Delivered via WhatsApp' : 'Waiting for WhatsApp Delivery'}
               </span>
             </div>
           </div>

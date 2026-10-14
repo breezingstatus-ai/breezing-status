@@ -1,5 +1,5 @@
 # Cloudflare Deployment Configuration for Breezing Status HD
-name = "breezing-status-hd"
+name = "breezing"
 compatibility_date = "2024-09-23"
 
 # Build the frontend for direct Wrangler deployments too.

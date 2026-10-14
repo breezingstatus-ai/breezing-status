@@ -1,0 +1,15 @@
+import assert from 'node:assert/strict';import {readFile} from 'node:fs/promises';import {transform,build} from 'esbuild';
+const source=(await readFile('supabase/functions/delete-request/index.ts','utf8')).replace(/^import .*;\s*$/gm,'');const {code}=await transform(source,{loader:'ts',format:'cjs'});
+let handler,admin=true,deleted=false,providerResult='ok';const calls=[];
+const env={SUPABASE_URL:'https://test.invalid',SUPABASE_PUBLISHABLE_KEYS:'{"default":"public"}',SUPABASE_SECRET_KEYS:'{"default":"private"}',CLOUDINARY_CLOUD_NAME:'test',CLOUDINARY_API_KEY:'test',CLOUDINARY_API_SECRET:'test'};
+const client=()=>({auth:{getUser:async()=>({data:{user:{id:'admin'}},error:null})},rpc:async()=>({data:admin,error:null}),from(table){const chain={select(){return chain;},eq(){return chain;},maybeSingle:async()=>({data:{id:'request'},error:null}),delete(){deleted=true;return chain;},then(resolve,reject){return Promise.resolve({data:table==='media_assets'?[{id:'asset',cloudinary_public_id:'owned/file',resource_type:'video'}]:null,error:null}).then(resolve,reject);}};return chain;}});
+new Function('serve','createClient','Deno','fetch',code)(value=>handler=value,client,{env:{get:key=>env[key]}},async(url,options)=>{calls.push({url,form:options.body});return Response.json({result:providerResult});});
+const request=()=>new Request('https://test.invalid',{method:'POST',headers:{Authorization:'Bearer session','Content-Type':'application/json'},body:JSON.stringify({requestId:'11111111-1111-4111-8111-111111111111',public_id:'attacker/file'})});
+assert.equal((await handler(new Request('https://test.invalid',{method:'POST'}))).status,401);
+admin=false;assert.equal((await handler(request())).status,403);assert.equal(calls.length,0);admin=true;
+providerResult='error';assert.equal((await handler(request())).status,502);assert.equal(deleted,false,'Provider failure must preserve database records for retry');
+providerResult='not found';assert.equal((await handler(request())).status,200);assert.equal(deleted,true);assert.equal(calls[0].form.get('public_id'),'owned/file');assert.equal(calls[0].form.get('invalidate'),'true');assert.match(calls[0].url,/\/video\/destroy$/);
+const bundle=await build({entryPoints:['src/lib/mediaThumbnail.ts'],bundle:true,write:false,format:'esm',platform:'node'});const {mediaThumbnail}=await import(`data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0].text).toString('base64')}`);
+const image=mediaThumbnail({secure_url:'https://res.cloudinary.com/test/image/upload/l_logo/fl_layer_apply/v1/abc.jpg',resource_type:'image'});assert.match(image,/fl_layer_apply\/c_fill,w_160,h_160,q_35,f_auto\/v1/);
+const video=mediaThumbnail({secure_url:'https://res.cloudinary.com/test/video/upload/v1/abc.mp4',resource_type:'video'});assert.match(video,/so_0,c_fill,w_160,h_160,q_35,f_jpg/);assert.match(video,/\.jpg$/);assert.equal(mediaThumbnail({secure_url:'https://elsewhere.invalid/full.jpg',resource_type:'image'}),'');
+console.log('Request media checks passed: admin authorization, provider-first deletion, retry safety, CDN invalidation, trusted targets, small branded image/video thumbnails.');

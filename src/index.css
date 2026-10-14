@@ -235,3 +235,6 @@ img, video { max-width: 100%; }
 .service-notice-orbit { display:flex; justify-content:center; align-items:center; gap:8px; height:60px; margin-bottom:20px; }
 .service-notice-orbit span { width:12px; height:12px; border-radius:50%; background:#21a36b; }
 .service-notice-orbit span:nth-child(2) { width:26px; height:26px; background:#173b2a; }
+
+.admin-account-dialog { margin:auto; border:1px solid #dce5df; }
+.admin-account-dialog::backdrop { background:rgb(0 0 0 / .5); }

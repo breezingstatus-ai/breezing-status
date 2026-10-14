@@ -1,3 +1,4 @@
+import {mediaThumbnail} from '../../lib/mediaThumbnail';
 import { useDialogs } from '../common/Dialogs';
 import React, { useState, useEffect } from 'react';
 import {
@@ -109,7 +110,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onOpenSettings, 
   };
 
   const handleDelete = async (requestId: string) => {
-    if (await confirm('Are you sure you want to delete this customer request?')) {
+    if (await confirm('Delete this request and its images or videos from Cloudinary? This cannot be undone.', 'Delete request and media')) {
       try { await deleteUploadRequest(requestId); await loadRequests(); } catch(error) { await notify(error instanceof Error?error.message:'Request deletion failed'); }
     }
   };
@@ -471,19 +472,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onOpenSettings, 
                         className="relative group shrink-0 w-20 h-20 rounded-xl overflow-hidden bg-slate-100 dark:bg-slate-800 border border-[#E4EAE5] dark:border-[#334539]"
                       >
                         <img
-                          src={asset.secure_url}
+                          src={mediaThumbnail(asset)}
+                          loading="lazy" decoding="async"
                           alt="Asset"
                           className="w-full h-full object-cover"
                         />
                         {/* Overlay with Preview & Individual Download buttons */}
-                        <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center gap-1.5 transition-all">
+                        <div className="absolute inset-0 bg-black/60 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100 flex items-center justify-center gap-1.5 transition-all">
                           <button
                             onClick={() => {
                               setSelectedPreviewReq(req);
                               setPreviewMediaIndex(idx);
                             }}
                             className="p-1 rounded-md bg-white/20 text-white hover:bg-white/40"
-                            title="Preview"
+                            title="View full quality" aria-label="View full quality"
                           >
                             <Eye className="w-3.5 h-3.5" />
                           </button>
@@ -619,11 +621,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onOpenSettings, 
 
             {/* Media display with Prev/Next buttons */}
             <div className="relative aspect-[9/16] sm:aspect-video max-h-[60vh] bg-black flex items-center justify-center overflow-hidden">
-              <img
-                src={selectedPreviewReq.assets[previewMediaIndex]?.secure_url}
-                alt="HD Asset"
-                className="max-h-full max-w-full object-contain"
-              />
+              {selectedPreviewReq.assets[previewMediaIndex]?.resource_type==='video' ? <video key={selectedPreviewReq.assets[previewMediaIndex].id} src={selectedPreviewReq.assets[previewMediaIndex].secure_url} controls playsInline preload="metadata" className="max-h-full max-w-full"/> : <img src={selectedPreviewReq.assets[previewMediaIndex]?.secure_url} alt="Full-quality media" className="max-h-full max-w-full object-contain"/>}
+
 
               {selectedPreviewReq.assets.length > 1 && (
                 <>
@@ -651,6 +650,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onOpenSettings, 
               )}
             </div>
 
+            <a href={selectedPreviewReq.assets[previewMediaIndex]?.secure_url} target="_blank" rel="noopener noreferrer" className="block text-center py-3 text-sm underline">Open full size</a>
             {/* Lightbox footer */}
             <div className="p-4 flex items-center justify-between bg-[#F8F9F7] dark:bg-[#101713]">
               <div className="flex gap-1.5 overflow-x-auto">

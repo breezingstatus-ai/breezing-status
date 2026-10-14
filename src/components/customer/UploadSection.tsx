@@ -603,7 +603,7 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
                 </p>
               </div>
               <p className="text-[11px] text-[#748078] dark:text-[#A7B8AC] leading-relaxed">
-                Save this number to your contacts so you can recognize our WhatsApp message when your media arrives.
+                Save our WhatsApp number to your contacts to receive your prepared pictures and videos.
               </p>
 
               <div className="flex gap-2 pt-1">
