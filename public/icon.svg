@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#173B2A" />
+      <stop offset="100%" stop-color="#0E2419" />
+    </linearGradient>
+    <linearGradient id="mint" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#58C994" />
+      <stop offset="100%" stop-color="#21A36B" />
+    </linearGradient>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="8" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+
+  <!-- Background rounded squircle with subtle inner padding for maskable safe zone -->
+  <rect width="512" height="512" rx="112" fill="url(#bg)" />
+
+  <!-- Outer subtle circular ring -->
+  <circle cx="256" cy="256" r="176" fill="none" stroke="#21A36B" stroke-width="6" opacity="0.25" />
+
+  <!-- Center Breeze Wave & Camera Aperture / HD Symbol -->
+  <g transform="translate(256, 256)">
+    <!-- Shutter Aperture / Sparkle Diamond -->
+    <path d="M 0 -105 L 30 -30 L 105 0 L 30 30 L 0 105 L -30 30 L -105 0 L -30 -30 Z" fill="url(#mint)" filter="url(#glow)" />
+    
+    <!-- Central Crisp Core -->
+    <circle cx="0" cy="0" r="28" fill="#F8F9F7" />
+
+    <!-- HD Badge Typography Overlay -->
+    <g transform="translate(0, 115)">
+      <rect x="-64" y="-22" width="128" height="44" rx="12" fill="#21A36B" />
+      <text x="0" y="8" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-weight="800" font-size="24" fill="#FFFFFF" text-anchor="middle" letter-spacing="2">HD</text>
+    </g>
+
+    <!-- Breeze Wind Curves -->
+    <path d="M -150 -60 C -100 -120, -40 -70, 0 -60 C 40 -50, 110 -90, 140 -40" fill="none" stroke="#58C994" stroke-width="8" stroke-linecap="round" opacity="0.8" />
+    <path d="M -140 60 C -90 10, -20 50, 20 40 C 70 30, 110 80, 150 40" fill="none" stroke="#21A36B" stroke-width="6" stroke-linecap="round" opacity="0.6" />
+  </g>
+</svg>

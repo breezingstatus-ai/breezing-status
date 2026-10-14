@@ -1,0 +1,6 @@
+{
+  "name": "breezing status HD",
+  "description": "High-quality WhatsApp Status media preparation and manual HD delivery Progressive Web App.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
