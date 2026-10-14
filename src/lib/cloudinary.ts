@@ -98,7 +98,12 @@ export async function uploadToCloudinary(
   // 2. Signed Upload via Supabase Edge Function (if available)
   if (isSupabaseConfigured() && supabase) {
     try {
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError || !session) {
+        throw new Error('Please sign in again before uploading media.');
+      }
       const { data: signData, error: signError } = await supabase.functions.invoke('sign-cloudinary-upload', {
+        headers: { Authorization: `Bearer ${session.access_token}` },
         body: { mediaType: resourceType, count: reservation?.count || 1, reservationToken: reservation?.token },
       });
 

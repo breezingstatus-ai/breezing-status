@@ -2,7 +2,7 @@
 // Finalizes upload request, saves media assets, commits quotas, and sends Resend notification
 
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.0";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.117.3";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -17,7 +17,8 @@ serve(async (req) => {
 
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
-    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+    const secretKeys = JSON.parse(Deno.env.get("SUPABASE_SECRET_KEYS") || "{}");
+    const supabaseServiceKey = secretKeys.default || Object.values(secretKeys)[0] || Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
     const resendApiKey = Deno.env.get("RESEND_API_KEY") ?? "";
     const adminEmail = Deno.env.get("ADMIN_NOTIFICATION_EMAIL") ?? "breezingstatus@gmail.com";
     const fromEmail = Deno.env.get("RESEND_FROM_EMAIL") ?? "notifications@breezing.com";
@@ -27,16 +28,21 @@ serve(async (req) => {
     const cloudinaryCloudName = Deno.env.get("CLOUDINARY_CLOUD_NAME") ?? "";
 
     const authHeader = req.headers.get("Authorization");
-    if (!authHeader) {
+    const accessToken = authHeader?.match(/^Bearer\s+(.+)$/i)?.[1];
+    if (!accessToken) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: corsHeaders });
     }
 
-    const supabaseUser = createClient(supabaseUrl, Deno.env.get("SUPABASE_ANON_KEY") ?? "", {
+    const publishableKeys = JSON.parse(Deno.env.get("SUPABASE_PUBLISHABLE_KEYS") || "{}");
+    const supabaseAnonKey = publishableKeys.default || Object.values(publishableKeys)[0] || Deno.env.get("SUPABASE_ANON_KEY") || "";
+    const supabaseUser = createClient(supabaseUrl, supabaseAnonKey, {
       global: { headers: { Authorization: authHeader } },
+      auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
     });
 
-    const { data: { user }, error: userError } = await supabaseUser.auth.getUser();
+    const { data: { user }, error: userError } = await supabaseUser.auth.getUser(accessToken);
     if (userError || !user) {
+      console.warn("Finalization authentication rejected", userError?.code, userError?.status, userError?.message);
       return new Response(JSON.stringify({ error: "Invalid user token" }), { status: 401, headers: corsHeaders });
     }
 

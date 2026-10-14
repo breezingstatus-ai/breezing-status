@@ -480,7 +480,10 @@ export async function createUploadRequest(
     try {
       // 1. Preferred route: finalize through backend Edge Function (verifies Cloudinary, reservation token, and quota)
       if (reservationToken) {
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+        if (sessionError || !session) throw new Error('Please sign in again before submitting your upload.');
         const { data: edgeData, error: edgeError } = await supabase.functions.invoke('finalize-request', {
+          headers: { Authorization: `Bearer ${session.access_token}` },
           body: {
             mediaType,
             assets: assets.map(asset => ({

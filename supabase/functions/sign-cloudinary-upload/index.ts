@@ -2,7 +2,7 @@
 // Secure signed upload parameter generator for Cloudinary
 
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.0";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.117.3";
 import { crypto } from "https://deno.land/std@0.177.0/crypto/mod.ts";
 
 const corsHeaders = {
@@ -18,23 +18,28 @@ serve(async (req) => {
 
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
-    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
+    const publishableKeys = JSON.parse(Deno.env.get("SUPABASE_PUBLISHABLE_KEYS") || "{}");
+    const supabaseAnonKey = publishableKeys.default || Object.values(publishableKeys)[0] || Deno.env.get("SUPABASE_ANON_KEY") || "";
     const cloudinaryApiKey = Deno.env.get("CLOUDINARY_API_KEY") ?? "";
     const cloudinaryApiSecret = Deno.env.get("CLOUDINARY_API_SECRET") ?? "";
     const cloudinaryCloudName = Deno.env.get("CLOUDINARY_CLOUD_NAME") ?? "";
 
     // 1. Verify Authentication
     const authHeader = req.headers.get("Authorization");
-    if (!authHeader) {
+    const accessToken = authHeader?.match(/^Bearer\s+(.+)$/i)?.[1];
+    if (!accessToken) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: corsHeaders });
     }
 
     const supabase = createClient(supabaseUrl, supabaseAnonKey, {
       global: { headers: { Authorization: authHeader } },
+      auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
     });
 
-    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    // Edge requests have no stored browser session: verify the supplied JWT explicitly.
+    const { data: { user }, error: userError } = await supabase.auth.getUser(accessToken);
     if (userError || !user) {
+      console.warn("Upload authentication rejected", userError?.code, userError?.status, userError?.message);
       return new Response(JSON.stringify({ error: "Invalid user token" }), { status: 401, headers: corsHeaders });
     }
 
