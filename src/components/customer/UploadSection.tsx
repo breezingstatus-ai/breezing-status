@@ -24,7 +24,7 @@ import {
 } from '../../types';
 import { processStatusPhotograph, inspectVideoFile } from '../../lib/mediaProcessor';
 import { uploadToCloudinary } from '../../lib/cloudinary';
-import { createUploadRequest, reserveMediaQuota, releaseMediaQuota } from '../../lib/supabase';
+import { createUploadRequest, reserveMediaQuota, releaseMediaQuota, getWatermarkSettings } from '../../lib/supabase';
 import { downloadContactVCard } from '../../lib/vcard';
 import { ProcessingAnimation, ProcessingStage } from './ProcessingAnimation';
 
@@ -203,6 +203,7 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
       setProcessingPercent(48);
 
       const uploadedAssets: MediaAsset[] = [];
+      const latestWatermark = await getWatermarkSettings();
       const totalFiles = selectedFiles.length;
 
       for (let i = 0; i < totalFiles; i++) {
@@ -212,8 +213,8 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
           // Process and enhance image
           const processed = await processStatusPhotograph(
             item.file,
-            watermarkSettings,
-            currentPackage.watermark_required
+            latestWatermark,
+            currentPackage.watermark_required && latestWatermark.enabled_for_free
           );
 
           // Stage 4: Optimizing Your Media (Upload with progress)

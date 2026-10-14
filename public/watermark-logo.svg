@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="600" height="160" viewBox="0 0 600 160">
+  <rect x="2" y="2" width="596" height="156" rx="30" fill="#173b2a" stroke="#e7eee3" stroke-width="4"/>
+  <text x="32" y="107" fill="#fffefa" font-family="Arial, sans-serif" font-size="76" font-weight="700">b.</text>
+  <path d="M145 34v92" stroke="#91b6a0" stroke-width="2"/>
+  <text x="173" y="70" fill="#fffefa" font-family="Arial, sans-serif" font-size="40" font-weight="700">Breezing Status</text>
+  <text x="175" y="118" fill="#bbd5ac" font-family="Arial, sans-serif" font-size="35" font-weight="700" letter-spacing="5">HD</text>
+</svg>

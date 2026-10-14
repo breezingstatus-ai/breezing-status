@@ -165,6 +165,9 @@ serve(async (req) => {
       .from("packages").select("*").eq("id", profileRow.package_id || "free").single();
     if (packageError) throw new Error(`Package lookup failed: ${packageError.message}`);
     const profile = { ...profileRow, packages: pkg };
+    const { data: watermark, error: watermarkError } = await supabaseAdmin
+      .from("watermark_settings").select("enabled_for_free").eq("id", 1).single();
+    if (watermarkError) throw new Error(`Watermark settings lookup failed: ${watermarkError.message}`);
 
     // 2. Generate unique Request Code: BRZ-XXXXX
     const requestCode = `BRZ-${Math.floor(10000 + Math.random() * 90000)}`;
@@ -183,7 +186,7 @@ serve(async (req) => {
         package_name: profile.packages?.name || "Free",
         media_type: mediaType || "image",
         media_count: assets.length,
-        watermark_applied: profile.packages?.watermark_required ?? true,
+        watermark_applied: mediaType === "image" && (pkg?.watermark_required ?? true) && (watermark?.enabled_for_free ?? true),
         status: "pending",
         admin_notes: customerNotes || null,
         expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),

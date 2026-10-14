@@ -80,7 +80,7 @@ const DEFAULT_PACKAGES: SubscriptionPackage[] = [
 
 const DEFAULT_WATERMARK: WatermarkSettings = {
   id: 1,
-  logo_url: '/watermark-logo.png',
+  logo_url: '/watermark-logo.svg',
   position: 'bottom-right',
   relative_size: 0.15,
   opacity: 0.85,
@@ -309,15 +309,17 @@ export async function updatePackage(pkg: SubscriptionPackage): Promise<void> {
 
 export async function getWatermarkSettings(): Promise<WatermarkSettings> {
   if (isSupabaseConfigured() && supabase) {
-    const { data } = await supabase.from('watermark_settings').select('*').single();
-    if (data) return data;
+    const { data, error } = await supabase.from('watermark_settings').select('*').single();
+    if (error) throw new Error(error.message);
+    if (data) return { ...data, logo_url: data.logo_url === '/watermark-logo.png' ? '/watermark-logo.svg' : data.logo_url };
   }
   return getStored<WatermarkSettings>(STORAGE_KEYS.WATERMARK, DEFAULT_WATERMARK);
 }
 
 export async function updateWatermarkSettings(settings: WatermarkSettings): Promise<void> {
   if (isSupabaseConfigured() && supabase) {
-    await supabase.from('watermark_settings').upsert({ ...settings, id: 1 });
+    const { error } = await supabase.from('watermark_settings').upsert({ ...settings, id: 1 });
+    if (error) throw new Error(error.message);
   }
   setStored(STORAGE_KEYS.WATERMARK, settings);
 }
@@ -468,6 +470,8 @@ export async function createUploadRequest(
   notes?: string,
   reservationToken?: string
 ): Promise<UploadRequest> {
+  const watermark = await getWatermarkSettings();
+  const watermarkApplied = mediaType === 'image' && pkg.watermark_required && watermark.enabled_for_free;
   const requestCode = `BRZ-${Math.floor(10000 + Math.random() * 90000)}`;
   const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
 
@@ -482,7 +486,7 @@ export async function createUploadRequest(
     package_name: pkg.name,
     media_type: mediaType,
     media_count: assets.length,
-    watermark_applied: pkg.watermark_required,
+    watermark_applied: watermarkApplied,
     status: 'pending',
     admin_notes: notes,
     expires_at: expiresAt,
@@ -541,7 +545,7 @@ export async function createUploadRequest(
           package_name: pkg.name,
           media_type: mediaType,
           media_count: assets.length,
-          watermark_applied: pkg.watermark_required,
+          watermark_applied: watermarkApplied,
           status: 'pending',
           admin_notes: notes,
           expires_at: expiresAt,
@@ -904,19 +908,10 @@ export async function checkIsAdmin(userId?: string): Promise<boolean> {
         return data;
       }
 
-      // 2. Query user profile role
-      const uid = userId || (await supabase.auth.getUser()).data.user?.id;
-      if (uid) {
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('role')
-          .eq('id', uid)
-          .single();
-        if (profile?.role === 'admin') return true;
-      }
     } catch (e) {
       console.warn('Server admin verification check:', e);
     }
+    return false;
   }
 
   // Fallback to active session profile role

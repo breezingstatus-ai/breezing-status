@@ -1,0 +1,30 @@
+import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
+import {PGlite} from '@electric-sql/pglite';
+const db = new PGlite();
+await db.exec(`CREATE SCHEMA auth;
+CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role;
+CREATE TABLE auth.users(id uuid PRIMARY KEY,email text,email_confirmed_at timestamptz);
+CREATE TABLE public.profiles(id uuid PRIMARY KEY,status text);
+CREATE TABLE public.admin_roles(user_id uuid,role text);
+CREATE TABLE public.watermark_settings(id int,logo_url text);
+CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $$SELECT nullif(current_setting('test.uid',true),'')::uuid$$;
+INSERT INTO watermark_settings VALUES(1,'/watermark-logo.png');`);
+await db.exec(await readFile(new URL('../supabase/setup/06_admin_email_access.sql',import.meta.url),'utf8'));
+const emails=['breezingpix@gmail.com','mphepobenedict@gmail.com','BreezingStatus@gmail.com','customer@example.invalid'];
+for(let i=0;i<emails.length;i++){
+ const id=`00000000-0000-4000-8000-00000000000${i}`;
+ await db.query('INSERT INTO auth.users VALUES($1,$2,now())',[id,emails[i]]);
+ await db.query("INSERT INTO profiles VALUES($1,'active')",[id]);
+ await db.query("SELECT set_config('test.uid',$1,false)",[id]);
+ assert.equal((await db.query('SELECT is_admin() AS allowed')).rows[0].allowed,i<3);
+}
+await db.exec("SET test.uid='00000000-0000-4000-8000-000000000000'; UPDATE auth.users SET email_confirmed_at=NULL WHERE id=auth.uid();");
+assert.equal((await db.query('SELECT is_admin() AS allowed')).rows[0].allowed,false,'Unverified owner email must not grant admin');
+await db.exec("UPDATE auth.users SET email_confirmed_at=now() WHERE id=auth.uid(); UPDATE profiles SET status='suspended' WHERE id=auth.uid();");
+assert.equal((await db.query('SELECT is_admin() AS allowed')).rows[0].allowed,false,'Suspended owner must not grant admin');
+await db.exec("SET test.uid='';");
+assert.equal((await db.query('SELECT is_admin() AS allowed')).rows[0].allowed,false);
+assert.equal((await db.query('SELECT logo_url FROM watermark_settings')).rows[0].logo_url,'/watermark-logo.svg');
+await db.close();
+console.log('Admin access checks passed: three verified emails, case handling, other accounts, unverified/suspended accounts, anonymous sessions.');

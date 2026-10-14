@@ -40,7 +40,7 @@ export async function loadWatermarkImage(logoUrl: string): Promise<HTMLImageElem
         ctx.fill();
         ctx.fillStyle = '#58C994';
         ctx.font = 'bold 20px sans-serif';
-        ctx.fillText('breezing HD', 20, 38);
+        ctx.fillText('Breezing Status HD', 20, 38);
       }
       const fallbackImg = new Image();
       fallbackImg.onload = () => resolve(fallbackImg);

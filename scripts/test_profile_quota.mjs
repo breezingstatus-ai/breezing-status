@@ -8,12 +8,15 @@ globalThis.localStorage = {getItem:k=>storage.get(k)??null,setItem:(k,v)=>storag
 const requests=[];
 const profile={id:'11111111-1111-4111-8111-111111111111',email:'test@example.invalid',full_name:'Test',whatsapp_number:'+265991234567',country_code:'+265',whatsapp_consent:true,role:'customer',package_id:'free',status:'active',created_at:new Date().toISOString()};
 let rejectSave=false;
+let rejectWatermarkSave=false;
 globalThis.fetch=async(url,options={})=>{
  const path=new URL(url).pathname;
  requests.push({path,method:options.method||'GET',headers:options.headers,body:options.body});
  if(path.endsWith('/user')) return Response.json({id:profile.id,email:profile.email});
  if(path.endsWith('/usage_quotas')) return Response.json([]);
  if(path.endsWith('/profiles')) return rejectSave?Response.json({code:'42501',message:'Save rejected'},{status:401}):Response.json(profile);
+ if(path.endsWith('/watermark_settings')) return rejectWatermarkSave?Response.json({code:'42501',message:'Watermark save rejected'},{status:403}):Response.json({id:1,logo_url:'/watermark-logo.png',enabled_for_free:false});
+ if(path.endsWith('/rpc/is_admin')) return Response.json({message:'Permission check unavailable'},{status:500});
  throw new Error('Unexpected test endpoint: '+path);
 };
 const output=await build({entryPoints:[fileURLToPath(new URL('../src/lib/supabase.ts',import.meta.url))],bundle:true,platform:'node',format:'cjs',write:false,logLevel:'silent',define:{'import.meta.env':JSON.stringify({VITE_SUPABASE_URL:'https://test.invalid',VITE_SUPABASE_PUBLISHABLE_KEY:'test-key'})}});
@@ -42,5 +45,12 @@ assert.equal('role' in body,false);
 assert.equal('package_id' in body,false);
 rejectSave=true;
 await assert.rejects(()=>api.saveUserProfile(profile),/Save rejected/);
+assert.equal((await api.getWatermarkSettings()).logo_url,'/watermark-logo.svg');
+await api.updateWatermarkSettings({id:1,enabled_for_free:false});
+rejectWatermarkSave=true;
+await assert.rejects(()=>api.updateWatermarkSettings({id:1,enabled_for_free:true}),/Watermark save rejected/);
+assert.equal(JSON.parse(storage.get('breezing_watermark')).enabled_for_free,false,'A failed save must not enable the logo locally');
+storage.set('breezing_current_user',JSON.stringify({...profile,role:'admin'}));
+assert.equal(await api.checkIsAdmin(),false,'Production admin access must fail closed when the server check fails');
 await api.supabase.auth.stopAutoRefresh();
 console.log('Profile/quota regression checks passed: empty month, PATCH save, editable fields, rejected saves propagate.');

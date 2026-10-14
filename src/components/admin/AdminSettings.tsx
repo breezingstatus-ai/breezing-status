@@ -55,6 +55,7 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ onBack }) => {
   // Watermark State
   const [watermark, setWatermark] = useState<WatermarkSettings | null>(null);
   const [wmSavedMsg, setWmSavedMsg] = useState(false);
+  const [wmSaveError, setWmSaveError] = useState('');
 
   // Packages & Limits State
   const [packages, setPackages] = useState<SubscriptionPackage[]>([]);
@@ -165,6 +166,7 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ onBack }) => {
     ctx.fillText('Original Dimensions & Sharpness Preserved', 320, 250);
 
     // Render watermark onto preview canvas
+    if (!watermark.enabled_for_free) return;
     const img = new Image();
     img.crossOrigin = 'anonymous';
     img.onload = () => {
@@ -224,9 +226,14 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ onBack }) => {
 
   const handleSaveWatermark = async () => {
     if (!watermark) return;
-    await updateWatermarkSettings(watermark);
-    setWmSavedMsg(true);
-    setTimeout(() => setWmSavedMsg(false), 2500);
+    setWmSaveError('');
+    try {
+      await updateWatermarkSettings(watermark);
+      setWmSavedMsg(true);
+      setTimeout(() => setWmSavedMsg(false), 2500);
+    } catch (error) {
+      setWmSaveError(error instanceof Error ? error.message : 'Could not save watermark settings.');
+    }
   };
 
   const handleSaveFreeLimits = async () => {
@@ -454,6 +461,11 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ onBack }) => {
             <h3 className="font-bold text-sm text-[#19241E] dark:text-[#F2F6F2]">
               Watermark Placement & Appearance
             </h3>
+            <label className="flex items-start gap-3 rounded-xl border border-[#E4EAE5] dark:border-[#334539] p-3 cursor-pointer">
+              <input type="checkbox" checked={watermark.enabled_for_free} onChange={(event) => setWatermark({ ...watermark, enabled_for_free: event.target.checked })} className="mt-1" />
+              <span><strong className="block">Apply Breezing Status HD logo</strong><span className="block mt-1 text-[#748078] dark:text-[#A7B8AC]">Turn off to remove the logo from all new pictures. Plans that include clean images remain watermark-free.</span></span>
+            </label>
+            {wmSaveError && <p role="alert" className="text-red-600">{wmSaveError}</p>}
 
             <div>
               <label className="block font-semibold mb-1 text-[#19241E] dark:text-[#F2F6F2]">

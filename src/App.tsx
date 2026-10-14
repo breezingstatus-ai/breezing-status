@@ -151,6 +151,7 @@ export default function App() {
           setUser(null);
           setIsAdmin(false);
           setIsAdminMode(false);
+          setIsCustomerPreviewMode(false);
         }
         // Auth callbacks run under Supabase's session lock. Defer API calls
         // until the callback returns so login and token refresh can finish.
@@ -193,7 +194,7 @@ export default function App() {
 
   const defaultWatermark: WatermarkSettings = watermarkSettings || {
     id: 1,
-    logo_url: '/watermark-logo.png',
+    logo_url: '/watermark-logo.svg',
     position: 'bottom-right',
     relative_size: 0.15,
     opacity: 0.85,

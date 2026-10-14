@@ -9,16 +9,19 @@ let handler;
 let profileError=null;
 let missingProfile=false;
 let insertError=null;
+let watermarkEnabled=true;
+let insertedRequest;
 const selections=[];
 const createClient=()=>({
  auth:{getUser:async token=>({data:{user:token==='fake-test-token'?{id:'test-user'}:null},error:null})},
  from(table){
-  const chain={select(fields){selections.push({table,fields});return chain;},eq(){return chain;},insert(){return chain;},
+  const chain={select(fields){selections.push({table,fields});return chain;},eq(){return chain;},insert(value){if(table==='upload_requests')insertedRequest=value;return chain;},
    async single(){return chain.result();},async maybeSingle(){return chain.result();},
    result(){
     if(table==='quota_reservations')return {data:{user_id:'test-user',status:'active',count:1,media_type:'image',expires_at:new Date(Date.now()+3600000).toISOString()},error:null};
     if(table==='profiles')return {data:missingProfile?null:{id:'test-user',package_id:'free',full_name:'Test'},error:profileError};
     if(table==='packages')return {data:{name:'Free',watermark_required:true},error:null};
+    if(table==='watermark_settings')return {data:{enabled_for_free:watermarkEnabled},error:null};
     if(table==='upload_requests')return {data:{id:'test-request',request_code:'BRZ-test',expires_at:new Date().toISOString()},error:null};
     return {data:null,error:insertError};
    },then(resolve,reject){return Promise.resolve(chain.result()).then(resolve,reject);}};
@@ -32,6 +35,11 @@ const request=()=>new Request('https://test.invalid',{method:'POST',headers:{Aut
 const success=await handler(request());
 assert.equal(success.status,200);
 assert.equal((await success.json()).success,true);
+assert.equal(insertedRequest.watermark_applied,true);
+watermarkEnabled=false;
+assert.equal((await handler(request())).status,200);
+assert.equal(insertedRequest.watermark_applied,false,'Disabled watermark must be recorded as disabled');
+watermarkEnabled=true;
 assert.deepEqual(selections.find(x=>x.table==='profiles'),{table:'profiles',fields:'*'},'Profile lookup must not depend on a PostgREST package relationship');
 assert.ok(selections.some(x=>x.table==='packages'));
 profileError={code:'PGRST200',message:'Database lookup unavailable'};
