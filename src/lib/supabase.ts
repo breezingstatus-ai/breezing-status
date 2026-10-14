@@ -125,12 +125,16 @@ type Listener = () => void;
 const listeners = new Set<Listener>();
 let stateChannel: ReturnType<NonNullable<typeof supabase>['channel']> | null = null;
 
-export function subscribeToStateUpdates(listener: Listener): () => void {
+export function subscribeToStateUpdates(listener: Listener, userId?: string): () => void {
   listeners.add(listener);
   if (supabase && !stateChannel) {
-    stateChannel = supabase.channel('app-state');
-    for (const table of ['packages','watermark_settings','profiles','usage_quotas','app_settings']) {
+    stateChannel = supabase.channel(`app-state-${crypto.randomUUID()}`);
+    for (const table of ['packages','watermark_settings','app_settings']) {
       stateChannel.on('postgres_changes', {event:'*', schema:'public', table}, notifyStateChange);
+    }
+    if (userId) {
+      stateChannel.on('postgres_changes', {event:'*',schema:'public',table:'profiles',filter:`id=eq.${userId}`}, notifyStateChange);
+      stateChannel.on('postgres_changes', {event:'*',schema:'public',table:'usage_quotas',filter:`user_id=eq.${userId}`}, notifyStateChange);
     }
     stateChannel.subscribe();
   }

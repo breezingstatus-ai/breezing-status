@@ -138,9 +138,9 @@ export default function App() {
 
   useEffect(() => {
     loadState();
-    const unsubscribe = subscribeToStateUpdates(loadState);
+    const unsubscribe = subscribeToStateUpdates(loadState, user?.id);
     return () => unsubscribe();
-  }, [loadState]);
+  }, [loadState, user?.id]);
 
   // Listen to Supabase Auth state changes
   useEffect(() => {
